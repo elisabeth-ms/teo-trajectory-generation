@@ -20,9 +20,6 @@
 #include </usr/local/include/nlopt.hpp>
 #include "trac_ik/trac_ik.hpp"
 
-#include <yarp/sig/PointCloud.h>
-#include <pcl/common/common.h>
-#include <yarp/pcl/Pcl.h>
 
 #include <TeoCheckCollisionsLibrary.hpp>
 #include <yarp/os/Vocab.h>
@@ -179,7 +176,6 @@ constexpr auto VOCAB_CMD_GET_SUPERQUADRICS = yarp::os::createVocab32('g', 's', '
             
 
             yarp::os::Port inPort;
-            yarp::sig::PointCloud<yarp::sig::DataXYZRGBA> inCloud;
 
             // boundsSolver.
             // boundsSolver.vel.y = 0.0001;

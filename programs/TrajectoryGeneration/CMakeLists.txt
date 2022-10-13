@@ -15,12 +15,6 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 set (CMAKE_CXX_STANDARD 11)
 
 find_package(YARP 3.3 REQUIRED COMPONENTS os dev)
-# find_package(PkgConfig REQUIRED)
-# pkg_check_modules(Eigen REQUIRED eigen3)
-# pkg_check_modules(pkg_nlopt REQUIRED nlopt)
-
-
-message("nloptttttt = ${nlopt_INCLUDE_DIR}")
 
 
 find_package(orocos_kdl 1.4)
@@ -28,8 +22,6 @@ find_package(ROBOTICSLAB_KINEMATICS_DYNAMICS REQUIRED)
 find_package(TEO_CHECK_COLLISIONS REQUIRED)
 find_package(ompl REQUIRED)
 find_package(fcl 0.6.0 REQUIRED)
-#find_package(Python2 COMPONENTS Interpreter Development NumPy REQUIRED)
-#find_package(PythonLibs 2.7 REQUIRED)
 find_library(trac-ik NAMES trac_ik libtrac_ik)
 
 

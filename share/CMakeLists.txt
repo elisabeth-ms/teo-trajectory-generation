@@ -4,3 +4,5 @@
 
 ### Go through single applications
 #add_subdirectory(prog)
+yarp_install(DIRECTORY contexts/trajectoryGeneration
+             DESTINATION ${TEO-TRAJECTORY-GENERATION_CONTEXTS_INSTALL_DIR})

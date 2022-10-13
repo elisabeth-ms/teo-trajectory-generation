@@ -16,7 +16,6 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake
 # Hard dependencies.
 find_package(YCM 0.11 REQUIRED)
 find_package(YARP 3.2 REQUIRED COMPONENTS OS)
-find_package(PCL REQUIRED)
 
 # Soft dependencies.
 find_package(Doxygen QUIET)
@@ -45,6 +44,9 @@ include(TEO_TRAJECTORY_GENERATIONDescribe)
 
 # Invoke CPack from here.
 include(TEO_TRAJECTORY_GENERATIONPackage)
+
+set(YARP_FORCE_DYNAMIC_PLUGINS TRUE CACHE INTERNAL "Force dynamic plugins")
+yarp_configure_external_installation(teo-trajectory-generation WITH_PLUGINS)
 
 # Generate a report of enabled/disabled features.
 feature_summary(WHAT ALL)

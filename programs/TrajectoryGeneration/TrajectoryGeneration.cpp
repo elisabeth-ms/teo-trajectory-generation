@@ -1311,21 +1311,6 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
                 m_checkCollisions->updateEnvironmentCollisionObjects();
 
             }break;
-            case VOCAB_UPDATE_POINTCLOUD:{
-                yInfo() << "Update the pointcloud for collision checking";
-                if(!yarp::os::Network::connect("/rgbdObjectDetection/state:o", inPort.getName())){
-                    yError() << "Unable to connect /getGraspingPoses/xtion/pointCloud:o to "<<inPort.getName();
-                    reply.addString("Unable to connect to /pointcloud port");
-                }
-                inPort.read(inCloud);
-                yInfo()<<inCloud.size();
-                pcl::PointCloud<pcl::PointXYZRGBA>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGBA>);
-                if(yarp::pcl::toPCL<yarp::sig::DataXYZRGBA, pcl::PointXYZRGBA>(inCloud, *cloud)){
-                    yInfo()<<"Could store the yarp pointcloud in a pcl cloud";
-                }
-
-
-            }break;
             case VOCAB_CHECK_GOAL_POSE:
                 {yInfo() << "Check goal pose (x, y, z, rotx, roty, rotz)";
                 std::vector<double> desireQ(numJoints);
