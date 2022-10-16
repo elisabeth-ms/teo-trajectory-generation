@@ -138,6 +138,7 @@ void TrajectoryGeneration::changeJointsLimitsFromConfigFile(KDL::JntArray & qlim
 
 bool TrajectoryGeneration::open(yarp::os::Searchable& config)
 {
+    printf("teo-trajectory-generation\n");
     robot = config.check("robot", yarp::os::Value(DEFAULT_ROBOT), "name of /robot to be used").asString();
     
     planningSpace = config.check("planningSpace", yarp::os::Value(DEFAULT_PLANNING_SPACE), "planning space").asString();
@@ -1303,7 +1304,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
                 static auto usage = makeUsage();
                 reply.append(usage);
             }break;
-            case VOCAB_CMD_GET_SUPERQUADRICS:{
+            case VOCAB_CMD_SET_SUPERQUADRICS:{
                 std::vector<int> label_idx; 
                 std::vector<std::array<float,11>> params;
                 getSuperquadrics(label_idx, params);
@@ -1341,6 +1342,35 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
                     reply.addVocab32(VOCAB_OK);
                 }
                 }break;
+            case VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES:
+            {
+                yInfo()<< "Compute inverse kinematics form lisy poses";
+                // yInfo()<<command.toString();
+                yarp::os::Bottle * poses = command.get(1).asList();
+                Bottle bJointsTrajectory;
+                for(int i=0; i<poses->size(); i++){
+                    yarp::os::Bottle * pose = poses->get(i).asList();
+                    std::vector<double> desireQ(numJoints);
+                    std::string errorMessage;
+                    if(checkGoalPose(pose, desireQ, errorMessage)){
+                        Bottle bJointsPosition;
+                        for(int j = 0; j<numJoints; j++){
+                            bJointsPosition.addFloat64(desireQ[j]);
+                        }
+                        bJointsTrajectory.addList() = bJointsPosition;
+                    }
+                }
+                if (bJointsTrajectory.size()>0){
+                    reply.addVocab32(VOCAB_OK);
+                    reply.addList() =bJointsTrajectory;
+                }
+                else{
+                    reply.addVocab32(VOCAB_FAILED);
+                    reply.addList() =bJointsTrajectory;
+                }
+
+
+            }break;
             case VOCAB_COMPUTE_JOINTS_PATH_GOAL_POSE:
                 {
                     yInfo()<<"Compute path in joint space to goal pose (x, y, z, rotx, roty, rotz";

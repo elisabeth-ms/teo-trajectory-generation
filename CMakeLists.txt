@@ -47,6 +47,14 @@ include(TEO_TRAJECTORY_GENERATIONPackage)
 
 set(YARP_FORCE_DYNAMIC_PLUGINS TRUE CACHE INTERNAL "Force dynamic plugins")
 yarp_configure_external_installation(teo-trajectory-generation WITH_PLUGINS)
-
+include(InstallBasicPackageFiles)
+install_basic_package_files(TEO_TRAJECTORY_GENERATION
+                            VERSION 0.1.0
+                            COMPATIBILITY AnyNewerVersion
+                            ${_no_export}
+                            NO_SET_AND_CHECK_MACRO
+                            NO_CHECK_REQUIRED_COMPONENTS_MACRO
+                            NAMESPACE ROBOTICSLAB::
+                            DEPENDENCIES ${_exported_dependencies})
 # Generate a report of enabled/disabled features.
 feature_summary(WHAT ALL)

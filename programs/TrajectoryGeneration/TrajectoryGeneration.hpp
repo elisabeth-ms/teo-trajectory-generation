@@ -56,8 +56,8 @@ constexpr auto VOCAB_CHECK_GOAL_JOINTS = yarp::os::createVocab32('c','h','g','j'
 constexpr auto VOCAB_COMPUTE_JOINTS_PATH_GOAL_POSE = yarp::os::createVocab32('c','p','g','p');
 constexpr auto VOCAB_COMPUTE_JOINTS_PATH_GOAL_JOINTS = yarp::os::createVocab32('c','p','g','j');
 constexpr auto VOCAB_UPDATE_POINTCLOUD = yarp::os::createVocab32('u','p','c');
-constexpr auto VOCAB_CMD_GET_SUPERQUADRICS = yarp::os::createVocab32('g', 's', 'u', 'p');
-
+constexpr auto VOCAB_CMD_SET_SUPERQUADRICS = yarp::os::createVocab32('s', 's', 'u', 'p');
+constexpr auto VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES = yarp::os::createVocab32('c', 'j', 'l', 'p');
 
 
 /**
