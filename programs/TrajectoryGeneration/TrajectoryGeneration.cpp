@@ -272,22 +272,29 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
 
     yInfo()<<"offset collisions created";
 
-    if(deviceName != "trunkAndRightArm"){
-        yError()<<"No trunkAndRightArm device";
-        return false;
-    }
+    // if(deviceName != "trunkAndRightArm"){
+    //     yError()<<"No trunkAndRightArm device";
+    //     return false;
+    // }
 
 
-    rf.setDefaultContext("kinematics");
-    std::string kinematicsFileFullPath = rf.findFileByName( "teo-trunk-rightArm-fetch.ini" );
+    // rf.setDefaultContext("kinematics");
+
+    // std::string kinematicsFileFullPath = rf.findFileByName( "teo-trunk-rightArm-fetch.ini" );
 
     rf.setDefaultContext("teoCheckSelfCollisions");
-    std::string selfCollisionsFileFullPath = rf.findFileByName( "teo-trunk-RightArm-fetch-collisions.ini");
-
+    std::string selfCollisionsFileFullPath;
+    if(deviceName == "trunkAndRightArm"){
+        selfCollisionsFileFullPath = rf.findFileByName( "teo-trunk-RightArm-fetch-collisions.ini");
+    }
+    else if (deviceName == "trunkAndLeftArm"){
+        selfCollisionsFileFullPath = rf.findFileByName( "teo-trunk-LeftArm-fetch-collisions.ini");
+    }
+    
     rf.setDefaultContext("teoCheckCollisions");
     std::string fixedObjectsFileFullPath = rf.findFileByName("fixed-table-collision.ini");
 
-    yInfo()<<kinematicsFileFullPath;
+    yInfo()<<kinPath;
     yInfo()<<selfCollisionsFileFullPath;
     yInfo()<<fixedObjectsFileFullPath;
 
@@ -295,7 +302,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
 
     m_checkCollisions = new TeoCheckCollisionsLibrary(fixedObjectsFileFullPath);
     m_checkCollisions->setSelfCollisionsFileFullPath(selfCollisionsFileFullPath);
-    m_checkCollisions->setKinematicsFileFullPath(kinematicsFileFullPath);
+    m_checkCollisions->setKinematicsFileFullPath(kinPath);
     m_checkCollisions->setQMin(m_qmin);
     m_checkCollisions->setQMax(m_qmax);
     m_checkCollisions->configureCollisionObjects();
