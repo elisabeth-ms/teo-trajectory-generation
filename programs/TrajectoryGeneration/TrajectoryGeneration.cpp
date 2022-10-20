@@ -316,9 +316,9 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
     boundsSolver.vel.x(0.0005);
     boundsSolver.vel.y(0.0005);
     boundsSolver.vel.z(0.0005);
-    boundsSolver.rot.x(0.01);
-    boundsSolver.rot.y(0.01);
-    boundsSolver.rot.z(0.01);
+    boundsSolver.rot.x(0.05);
+    boundsSolver.rot.y(0.05);
+    boundsSolver.rot.z(0.05);
 
 
 
@@ -1421,6 +1421,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
             case VOCAB_COMPUTE_JOINTS_PATH_GOAL_JOINTS:
                 {yInfo()<<"Compute path in joint space to goal joints configuration (j0, j1, ..., jn)";
                 Bottle * bGoal = command.get(1).asList();
+                yInfo()<<bGoal->toString();
                 std::string errorMessage;
                 if (bGoal->size() != numJoints){
                     reply.addVocab32(VOCAB_FAILED);
@@ -1431,6 +1432,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
                     for(unsigned int j=0; j<numJoints; j++){
                         goal[j] = bGoal->get(j).asFloat64();
                     }
+                    yInfo()<<"goal: "<<goal[0]<<" "<<goal[1]<<" "<<goal[2]<<" "<<goal[3]<<" "<<goal[4];
                     pdef->clearGoal();
                     pdef->setGoalState(goal);
 
