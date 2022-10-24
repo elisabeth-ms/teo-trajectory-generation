@@ -24,27 +24,28 @@ using namespace roboticslab::KdlVectorConverter;
 #define DEFAULT_PRUNE_THRESHOLD 0.5
 #define DEFAULT_MAX_PLANNER_TIME 5.0
 
+KDL::ChainFkSolverPos_recursive * fksolver;
+int numJoints;
 
-std::vector<std::string>availablePlanners = {"RRTConnect", "RRTStar"};
+std::vector<std::string> availablePlanners = {"RRTConnect", "RRTStar", "RRTSharp"};
 
+namespace errorsTrajectoryGeneration
+{
 
-namespace errorsTrajectoryGeneration{
-
-  const std::string goal_not_inv_kin ("invKin failed for goal pose");
-  const std::string goal_collision("robot collides at the goal configuration");
-  const std::string pose_6_elements("pose list must have 6 elements (x, y, z, rotx, roty, rotz)");
-  const std::string joints_elements("size of joints list is different than the number of joints");
-  const std::string start_collision("robot collides at the start configuration");
-  const std::string path_not_found("path NOT found");
-  const std::string joints_outside_bounds("joints outside bounds");
-  const std::string not_get_current_Q("could NOT get encoders values");
+    const std::string goal_not_inv_kin("invKin failed for goal pose");
+    const std::string goal_collision("robot collides at the goal configuration");
+    const std::string pose_6_elements("pose list must have 6 elements (x, y, z, rotx, roty, rotz)");
+    const std::string joints_elements("size of joints list is different than the number of joints");
+    const std::string start_collision("robot collides at the start configuration");
+    const std::string path_not_found("path NOT found");
+    const std::string joints_outside_bounds("joints outside bounds");
+    const std::string not_get_current_Q("could NOT get encoders values");
 };
-
 
 static KDL::Chain makeTeoTrunkAndRightArmKinematicsFromDH()
 {
     const KDL::Joint rotZ(KDL::Joint::RotZ);
-    const KDL::Joint fixed(KDL::Joint::None); //Rigid Connection
+    const KDL::Joint fixed(KDL::Joint::None); // Rigid Connection
     KDL::Chain chain;
     chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0.0, -KDL::PI / 2, 0.1932, 0.0)));
     chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0.305, 0.0, -0.34692, -KDL::PI / 2)));
@@ -64,7 +65,7 @@ static KDL::Chain makeTeoTrunkAndRightArmKinematicsFromDH()
 static KDL::Chain makeTeoTrunkAndLeftArmKinematicsFromDH()
 {
     const KDL::Joint rotZ(KDL::Joint::RotZ);
-    const KDL::Joint fixed(KDL::Joint::None); //Rigid Connection
+    const KDL::Joint fixed(KDL::Joint::None); // Rigid Connection
     KDL::Chain chain;
     chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0.0, -KDL::PI / 2, 0.1932, 0.0)));
     chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0.305, 0.0, 0.34692, -KDL::PI / 2)));
@@ -81,28 +82,30 @@ static KDL::Chain makeTeoTrunkAndLeftArmKinematicsFromDH()
 }
 /************************************************************************/
 
-static KDL::Chain makeTeoFixedTrunkAndRightArmKinematicsFromDH(){
+static KDL::Chain makeTeoFixedTrunkAndRightArmKinematicsFromDH()
+{
     const KDL::Joint rotZ(KDL::Joint::RotZ);
-    const KDL::Joint fixed(KDL::Joint::None); //Rigid Connection
+    const KDL::Joint fixed(KDL::Joint::None); // Rigid Connection
 
     KDL::Chain chain;
-    chain.addSegment(KDL::Segment(fixed, KDL::Frame::DH(0.0, -KDL::PI/2, 0.1932,0.0)));
-    chain.addSegment(KDL::Segment(fixed, KDL::Frame::DH(0.305, 0.0, 0.34692, -KDL::PI/2)));
-    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(    0, -KDL::PI / 2,        0,            0)));
-    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(    0, -KDL::PI / 2,        0, -KDL::PI / 2)));
-    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(    0, -KDL::PI / 2, -0.32901, -KDL::PI / 2)));
-    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(    0,  KDL::PI / 2,        0,            0)));
-    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(    0, -KDL::PI / 2,   -0.215,            0)));
-    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(-0.09,            0,        0, -KDL::PI / 2)));
+    chain.addSegment(KDL::Segment(fixed, KDL::Frame::DH(0.0, -KDL::PI / 2, 0.1932, 0.0)));
+    chain.addSegment(KDL::Segment(fixed, KDL::Frame::DH(0.305, 0.0, 0.34692, -KDL::PI / 2)));
+    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0, -KDL::PI / 2, 0, 0)));
+    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0, -KDL::PI / 2, 0, -KDL::PI / 2)));
+    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0, -KDL::PI / 2, -0.32901, -KDL::PI / 2)));
+    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0, KDL::PI / 2, 0, 0)));
+    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(0, -KDL::PI / 2, -0.215, 0)));
+    chain.addSegment(KDL::Segment(rotZ, KDL::Frame::DH(-0.09, 0, 0, -KDL::PI / 2)));
 
     return chain;
 }
 
 /************************************************************************/
 
-static KDL::Chain makeTeoFixedTrunkAndLeftArmKinematicsFromDH(){
+static KDL::Chain makeTeoFixedTrunkAndLeftArmKinematicsFromDH()
+{
     const KDL::Joint rotZ(KDL::Joint::RotZ);
-    const KDL::Joint fixed(KDL::Joint::None); //Rigid Connection
+    const KDL::Joint fixed(KDL::Joint::None); // Rigid Connection
 
     KDL::Chain chain;
     chain.addSegment(KDL::Segment(fixed, KDL::Frame::DH(0.0, -KDL::PI / 2, 0.1932, 0.0)));
@@ -119,28 +122,32 @@ static KDL::Chain makeTeoFixedTrunkAndLeftArmKinematicsFromDH(){
     return chain;
 }
 
-void TrajectoryGeneration::changeJointsLimitsFromConfigFile(KDL::JntArray & qlim, const yarp::os::Searchable& config, const std::string& mode){
-    if(!config.check(mode))
+void TrajectoryGeneration::changeJointsLimitsFromConfigFile(KDL::JntArray &qlim, const yarp::os::Searchable &config, const std::string &mode)
+{
+    if (!config.check(mode))
     {
-        yInfo()<<"q"<<mode<<"limits NOT defined in config file. Continue with the limits defined in the IControlLimits devices.";
-    }else{
-        yarp::os::Bottle * qConfig = config.find(mode).asList();
-        for(int i=0; i<numJoints; i++){
-            if(qConfig->get(i).asString()!= "D" && !qConfig->get(i).isNull()){
-                qlim(i) =std::stof(qConfig->get(i).asString());
+        yInfo() << "q" << mode << "limits NOT defined in config file. Continue with the limits defined in the IControlLimits devices.";
+    }
+    else
+    {
+        yarp::os::Bottle *qConfig = config.find(mode).asList();
+        for (int i = 0; i < numJoints; i++)
+        {
+            if (qConfig->get(i).asString() != "D" && !qConfig->get(i).isNull())
+            {
+                qlim(i) = std::stof(qConfig->get(i).asString());
             }
         }
     }
 }
 
-
 /************************************************************************/
 
-bool TrajectoryGeneration::open(yarp::os::Searchable& config)
+bool TrajectoryGeneration::open(yarp::os::Searchable &config)
 {
     printf("teo-trajectory-generation\n");
     robot = config.check("robot", yarp::os::Value(DEFAULT_ROBOT), "name of /robot to be used").asString();
-    
+
     planningSpace = config.check("planningSpace", yarp::os::Value(DEFAULT_PLANNING_SPACE), "planning space").asString();
     deviceName = config.check("deviceName", yarp::os::Value(DEFAULT_DEVICE_NAME), "device name").asString();
 
@@ -149,15 +156,14 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
     plannerRange = config.check("plannerRange", yarp::os::Value(DEFAULT_RANGE_RRT), "range the planner is supposed to use").asFloat64();
     pruneThreshold = config.check("pruneThreshold", yarp::os::Value(DEFAULT_PRUNE_THRESHOLD), "prune theshold used for RRTStar").asFloat64();
     maxPlannerTime = config.check("maxPlannerTime", yarp::os::Value(DEFAULT_MAX_PLANNER_TIME), "seconds the algorithm is allowed to spend planning").asFloat64();
-    prefix = "/trajectoryGeneration/"+deviceName;
-    printf("TrajectoryGeneration using robot: %s\n",robot.c_str());
-    printf("TrajectoryGeneration using planningSpace: %s\n",planningSpace.c_str());
-    printf("TrajectoryGeneration using deviceName: %s\n",deviceName.c_str());
-    printf("TrajectoryGeneration using kinematicsConfig: %s\n",kinematicsConfig.c_str());
+    prefix = "/trajectoryGeneration/" + deviceName;
+    printf("TrajectoryGeneration using robot: %s\n", robot.c_str());
+    printf("TrajectoryGeneration using planningSpace: %s\n", planningSpace.c_str());
+    printf("TrajectoryGeneration using deviceName: %s\n", deviceName.c_str());
+    printf("TrajectoryGeneration using kinematicsConfig: %s\n", kinematicsConfig.c_str());
     printf("TrajectoryGeneration using plannerType: %s\n", plannerType.c_str());
     printf("TrajectoryGeneration using plannerRange: %f\n", plannerRange);
     printf("TrajectoryGeneration using pruneThreshold: %f\n", pruneThreshold);
-
 
     printf("--------------------------------------------------------------\n");
     if (config.check("help"))
@@ -168,18 +174,18 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         ::exit(0);
     }
 
-    if(!openDevices())
+    if (!openDevices())
         return false;
 
-
     //  Getting the limits of each joint
-    printf("---- Joint limits of %s\n",deviceName.c_str());
+    printf("---- Joint limits of %s\n", deviceName.c_str());
     qmin.resize(numJoints);
     qmax.resize(numJoints);
     m_qmin.resize(numJoints);
     m_qmax.resize(numJoints);
 
-    for(unsigned int joint = 0; joint < numJoints; joint++){
+    for (unsigned int joint = 0; joint < numJoints; joint++)
+    {
         double min, max;
         iControlLimits->getLimits(joint, &min, &max);
         qmin(joint) = min;
@@ -188,24 +194,25 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         m_qmax[joint] = max;
     }
 
-    changeJointsLimitsFromConfigFile(qmin,config, "qmin");
-    changeJointsLimitsFromConfigFile(qmax,config, "qmax");
+    changeJointsLimitsFromConfigFile(qmin, config, "qmin");
+    changeJointsLimitsFromConfigFile(qmax, config, "qmax");
 
-
-    for(unsigned int joint =0; joint<numJoints; joint++){
+    for (unsigned int joint = 0; joint < numJoints; joint++)
+    {
         yInfo("Joint %d limits: [%f,%f]", joint, qmin(joint), qmax(joint));
         qrMin.addFloat64(qmin(joint));
         qrMax.addFloat64(qmax(joint));
     }
 
-    // LIMITS IN RADIANS FOR 
+    // LIMITS IN RADIANS FOR
     qminRad.resize(numJoints);
     qmaxRad.resize(numJoints);
 
-    for(unsigned int joint =0; joint<numJoints; joint++){
+    for (unsigned int joint = 0; joint < numJoints; joint++)
+    {
         yInfo("Joint %d limits: [%f,%f]", joint, qmin(joint), qmax(joint));
-        qminRad(joint)=qmin(joint)*KDL::deg2rad;
-        qmaxRad(joint) = qmax(joint)*KDL::deg2rad;
+        qminRad(joint) = qmin(joint) * KDL::deg2rad;
+        qmaxRad(joint) = qmax(joint) * KDL::deg2rad;
     }
 
     // ----- Configuring KDL Solver for device -----
@@ -223,7 +230,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
     armSolverDevice.open(armSolverOptions);
     if (!armSolverDevice.isValid())
     {
-        yError() << "KDLSolver solver device for "<<deviceName<<" is not valid";
+        yError() << "KDLSolver solver device for " << deviceName << " is not valid";
         return false;
     }
 
@@ -244,39 +251,37 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         return false;
     }
 
-
     m_clientGetGraspingPoses.open("/client");
     yarp::os::Network::connect("/client", "/getGraspingPoses/rpc:s");
-    
 
-    //Init collisions objects
-    if(deviceName == "trunkAndRightArm")
+    // Init collisions objects
+    if (deviceName == "trunkAndRightArm")
         chain = makeTeoTrunkAndRightArmKinematicsFromDH();
     else if (deviceName == "rightArm")
     {
         chain = makeTeoFixedTrunkAndRightArmKinematicsFromDH();
     }
-    else if(deviceName == "trunkAndLeftArm")
+    else if (deviceName == "trunkAndLeftArm")
     {
         chain = makeTeoTrunkAndLeftArmKinematicsFromDH();
     }
-    else if(deviceName == "leftArm"){
+    else if (deviceName == "leftArm")
+    {
         chain = makeTeoFixedTrunkAndLeftArmKinematicsFromDH();
     }
-    else{
-        yError()<<"Invalid deviceName. Options: trunkAndRightArm, rightArm, trunkAndLeftArm, leftArm";
+    else
+    {
+        yError() << "Invalid deviceName. Options: trunkAndRightArm, rightArm, trunkAndLeftArm, leftArm";
     }
 
     unsigned int nj = chain.getNrOfJoints();
 
-
-    yInfo()<<"offset collisions created";
+    yInfo() << "offset collisions created";
 
     // if(deviceName != "trunkAndRightArm"){
     //     yError()<<"No trunkAndRightArm device";
     //     return false;
     // }
-
 
     // rf.setDefaultContext("kinematics");
 
@@ -284,21 +289,21 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
 
     rf.setDefaultContext("teoCheckSelfCollisions");
     std::string selfCollisionsFileFullPath;
-    if(deviceName == "trunkAndRightArm"){
-        selfCollisionsFileFullPath = rf.findFileByName( "teo-trunk-RightArm-fetch-collisions.ini");
+    if (deviceName == "trunkAndRightArm")
+    {
+        selfCollisionsFileFullPath = rf.findFileByName("teo-trunk-RightArm-fetch-collisions.ini");
     }
-    else if (deviceName == "trunkAndLeftArm"){
-        selfCollisionsFileFullPath = rf.findFileByName( "teo-trunk-LeftArm-fetch-collisions.ini");
+    else if (deviceName == "trunkAndLeftArm")
+    {
+        selfCollisionsFileFullPath = rf.findFileByName("teo-trunk-LeftArm-fetch-collisions.ini");
     }
-    
+
     rf.setDefaultContext("teoCheckCollisions");
     std::string fixedObjectsFileFullPath = rf.findFileByName("fixed-table-collision.ini");
 
-    yInfo()<<kinPath;
-    yInfo()<<selfCollisionsFileFullPath;
-    yInfo()<<fixedObjectsFileFullPath;
-
-
+    yInfo() << kinPath;
+    yInfo() << selfCollisionsFileFullPath;
+    yInfo() << fixedObjectsFileFullPath;
 
     m_checkCollisions = new TeoCheckCollisionsLibrary(fixedObjectsFileFullPath);
     m_checkCollisions->setSelfCollisionsFileFullPath(selfCollisionsFileFullPath);
@@ -312,7 +317,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
 
     nlopt_opt opt_obo;
     opt_obo = nlopt_create(NLOPT_LN_BOBYQA, numJoints);
-    iksolver = new  TRAC_IK::TRAC_IK(chain, qminRad, qmaxRad, timeout_in_secs, 0.002, TRAC_IK::Speed);  
+    iksolver = new TRAC_IK::TRAC_IK(chain, qminRad, qmaxRad, timeout_in_secs, 0.002, TRAC_IK::Speed);
     boundsSolver.vel.x(0.0005);
     boundsSolver.vel.y(0.0005);
     boundsSolver.vel.z(0.0005);
@@ -320,11 +325,10 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
     boundsSolver.rot.y(0.05);
     boundsSolver.rot.z(0.05);
 
-
-
-
+    fksolver = new KDL::ChainFkSolverPos_recursive(chain);
     
-    if(planningSpace == "cartesian"){ // cartesian space
+    if (planningSpace == "cartesian")
+    { // cartesian space
         space = ob::StateSpacePtr(new ob::SE3StateSpace());
         ob::RealVectorBounds bounds{3};
 
@@ -338,8 +342,8 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         bounds.setHigh(2, 0.6);
 
         space->as<ob::SE3StateSpace>()->setBounds(bounds);
-    
-        //space->as<ob::RealVectorStateSpace>()->setBounds(bounds);
+
+        // space->as<ob::RealVectorStateSpace>()->setBounds(bounds);
 
         si = ob::SpaceInformationPtr(new ob::SpaceInformation(space));
 
@@ -347,13 +351,16 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         si->setup();
 
         pdef = ob::ProblemDefinitionPtr(new ob::ProblemDefinition(si));
+
     }
-    else{// joint space
+    else
+    { // joint space
         space = ob::StateSpacePtr(new ob::RealVectorStateSpace(nj));
         ob::RealVectorBounds bounds{nj};
-        for(unsigned int j=0; j<nj; j++){
-            bounds.setLow(j, qmin(j)+MARGIN_BOUNDS);
-            bounds.setHigh(j, qmax(j)-MARGIN_BOUNDS);
+        for (unsigned int j = 0; j < nj; j++)
+        {
+            bounds.setLow(j, qmin(j) + MARGIN_BOUNDS);
+            bounds.setHigh(j, qmax(j) - MARGIN_BOUNDS);
         }
         space->as<ob::RealVectorStateSpace>()->setBounds(bounds);
         si = ob::SpaceInformationPtr(new ob::SpaceInformation(space));
@@ -362,26 +369,32 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         si->setup();
 
         pdef = ob::ProblemDefinitionPtr(new ob::ProblemDefinition(si));
+
+        pdef->setOptimizationObjective(getPathObjective(si));
+
+
     }
 
     bool availablePlannerSelected = false;
-    for (unsigned i=0; i<availablePlanners.size(); i++)
-        if(plannerType == availablePlanners[i]){
+    for (unsigned i = 0; i < availablePlanners.size(); i++)
+        if (plannerType == availablePlanners[i])
+        {
             availablePlannerSelected = true;
             break;
         }
     if (!availablePlannerSelected)
     {
-        yWarning()<<"Selected NOT available planner. Using default planner: "<<DEFAULT_PLANNER;
+        yWarning() << "Selected NOT available planner. Using default planner: " << DEFAULT_PLANNER;
         plannerType = DEFAULT_PLANNER;
     }
 
-
-    if (plannerType == "RRTConnect"){
+    if (plannerType == "RRTConnect")
+    {
         auto plannerRRT = (new og::RRTConnect(si));
         plannerRRT->setRange(plannerRange);
         planner = ob::PlannerPtr(plannerRRT);
-    }else if (plannerType == "RRTStar")
+    }
+    else if (plannerType == "RRTStar")
     {
         auto plannerRRT = (new og::RRTstar(si));
         plannerRRT->setRange(plannerRange);
@@ -390,33 +403,37 @@ bool TrajectoryGeneration::open(yarp::os::Searchable& config)
         plannerRRT->setInformedSampling(true);
         planner = ob::PlannerPtr(plannerRRT);
     }
+    else if(plannerType == "RRTSharp"){
+        auto plannerRRT = (new og::RRTsharp(si));
+        plannerRRT->setRange(plannerRange);
+        plannerRRT->setGoalBias(0.1);
+        planner = ob::PlannerPtr(plannerRRT);
+    }
 
-    
-    if(!inPort.open(prefix + "/pointCloud:i"))
+    if (!inPort.open(prefix + "/pointCloud:i"))
     {
-        yError()<<"Could not open"<<inPort.getName()<<"open";
+        yError() << "Could not open" << inPort.getName() << "open";
         return false;
     }
 
-   
     rpcServer.setReader(*this);
 
     return true;
 }
 
-bool TrajectoryGeneration::openDevices(){
-    
+bool TrajectoryGeneration::openDevices()
+{
+
     // Lets try open the solver with the name on deviceName
 
-    
     yarp::os::Property options;
     options.put("device", "remote_controlboard");
-    options.put("remote", "/"+robot+"/"+deviceName);
-    options.put("local", "/" +robot + "/"+deviceName);
+    options.put("remote", "/" + robot + "/" + deviceName);
+    options.put("local", "/" + robot + "/" + deviceName);
     device.open(options);
     if (!device.isValid())
     {
-        yError() << "Robot "<<deviceName<<" device not available";
+        yError() << "Robot " << deviceName << " device not available";
         device.close();
         yarp::os::Network::fini();
         return false;
@@ -425,25 +442,27 @@ bool TrajectoryGeneration::openDevices(){
     // connecting our device with "IEncoders" interface
     if (!device.view(iEncoders))
     {
-        yError() << "Problems acquiring IEncoders interface in "<<deviceName;
+        yError() << "Problems acquiring IEncoders interface in " << deviceName;
         return false;
     }
     else
     {
-        yInfo() << "Acquired IEncoders interface in "<<deviceName;
-        if (!iEncoders->getAxes(&numJoints))
+        yInfo() << "Acquired IEncoders interface in " << deviceName;
+        int joints;
+        if (!iEncoders->getAxes(&joints))
             yError() << "Problems acquiring numJoints";
         else
+            numJoints = joints;
             yWarning() << "Number of joints:" << numJoints;
     }
 
     if (!device.view(iControlLimits))
     {
-        yError() << "Could not view iControlLimits in "<<deviceName;
+        yError() << "Could not view iControlLimits in " << deviceName;
         return false;
     }
 
- // connecting our device with "control mode" interface, initializing which control mode we want (position)
+    // connecting our device with "control mode" interface, initializing which control mode we want (position)
     if (!device.view(iControlMode))
     {
         yError() << "Problems acquiring IControlMode interface";
@@ -461,29 +480,27 @@ bool TrajectoryGeneration::openDevices(){
     else
         yInfo() << "Acquired IPositionControl interface";
 
-
-    
-    yInfo()<<"Devices open";
+    yInfo() << "Devices open";
     return true;
 }
 
+bool TrajectoryGeneration::getCurrentQ(std::vector<double> &currentQ)
+{
 
-bool TrajectoryGeneration::getCurrentQ(std::vector<double> & currentQ){
-
-    if(!iEncoders->getEncoders(currentQ.data())){
-        yError() << " Failed getEncoders() of "<<deviceName;
+    if (!iEncoders->getEncoders(currentQ.data()))
+    {
+        yError() << " Failed getEncoders() of " << deviceName;
         return false;
     }
     return true;
-
 }
-
 
 /************************************************************************/
 bool TrajectoryGeneration::isValid(const ob::State *state)
 {
 
-    if(planningSpace == "cartesian"){
+    if (planningSpace == "cartesian")
+    {
         // cast the abstract state type to the type we expect
         const ob::SE3StateSpace::StateType *se3state = state->as<ob::SE3StateSpace::StateType>();
 
@@ -492,7 +509,6 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
 
         // extract the second component of the state and cast it to what we expect
         const ob::SO3StateSpace::StateType *rot = se3state->as<ob::SO3StateSpace::StateType>(1);
-
 
         KDL::Frame frame;
 
@@ -507,7 +523,6 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
 
         std::vector<double> currentQ(numJoints);
 
-
         // Check if we are in the starting state
 
         std::vector<double> xStart;
@@ -518,7 +533,6 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
             return false;
         }
 
-
         bool computeInvKin = true;
 
         double diffSumSquare = 0;
@@ -527,14 +541,12 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
             diffSumSquare += (xStart[i] - testAxisAngle[i]) * (xStart[i] - testAxisAngle[i]);
         }
 
-
         if (diffSumSquare < DEFAULT_MAX_DIFF_INV)
         {
             computeInvKin = false;
         }
 
         std::vector<double> desireQ(numJoints);
-
 
         if (computeInvKin)
         {
@@ -543,17 +555,14 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
             for (unsigned int i = 0; i < qInit.rows(); i++)
             {
                 qInit(i) = currentQ[i];
-                qInitRad(i) = currentQ[i]*KDL::deg2rad;
-
+                qInitRad(i) = currentQ[i] * KDL::deg2rad;
             }
-            
 
             KDL::JntArray jointpositionsRad = KDL::JntArray(numJoints);
             KDL::JntArray jointpositions = KDL::JntArray(numJoints);
 
-
             int foundik = (*iksolver).CartToJnt(qInitRad, frame, jointpositionsRad, boundsSolver);
-            if (foundik!=1)
+            if (foundik != 1)
             {
                 yError() << "invKin() failed";
                 return false;
@@ -564,19 +573,17 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
             //     yError() << "invKin() failed";
             //     return false;
             // }
-        
-        
+
             goalQ.clear();
 
             for (unsigned int i = 0; i < jointpositionsRad.rows(); i++)
             {
-                jointpositions(i) = jointpositionsRad(i)*KDL::rad2deg;
+                jointpositions(i) = jointpositionsRad(i) * KDL::rad2deg;
                 desireQ[i] = jointpositions(i);
                 goalQ.push_back(desireQ[i]);
             }
-            
-            yInfo()<<"desireQ: "<<desireQ;
 
+            yInfo() << "desireQ: " << desireQ;
 
             m_checkCollisions->updateCollisionObjectsTransform(desireQ);
             bool collide = m_checkCollisions->collision();
@@ -584,8 +591,9 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
         }
         return true;
     }
-    else{ // joint space
-        
+    else
+    { // joint space
+
         const ob::RealVectorStateSpace::StateType *jointState = state->as<ob::RealVectorStateSpace::StateType>();
         KDL::JntArray jointpositions = KDL::JntArray(numJoints);
         std::vector<double> currentQ(numJoints);
@@ -596,24 +604,52 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
             currentQ[i] = jointpositions(i);
             // yInfo()<<"Joint("<<i<<")="<<jointpositions(i);
         }
-        
 
         jointsInsideBounds = m_checkCollisions->updateCollisionObjectsTransform(currentQ);
 
-        
-        if(jointsInsideBounds){
-            yInfo()<<"Joints inside bounds";
+        if (jointsInsideBounds)
+        {
             bool collide = m_checkCollisions->collision();
-            yInfo()<<"eo: selfCollision"<<collide;
             return !collide;
         }
-        else{
-            
-            yInfo()<<"eo: joints outside bounds";
+        else
+        {
+
             return false;
         }
     }
 }
+
+// /************************************************************************/
+// ob::Cost TrajectoryGeneration::costToGo(const State* state1, const State* state2)
+// {
+
+//     const ob::RealVectorStateSpace::StateType *jointState1 = state1->as<ob::RealVectorStateSpace::StateType>();
+//     const ob::RealVectorStateSpace::StateType *jointState2 = state2->as<ob::RealVectorStateSpace::StateType>();
+
+//     KDL::JntArray jointpositions1 = KDL::JntArray(numJoints);
+//     KDL::JntArray jointpositions2 = KDL::JntArray(numJoints);
+
+//     for (unsigned int i = 0; i < jointpositions1.rows(); i++)
+//     {
+//         jointpositions1(i) = jointState1->values[i];
+//         jointpositions2(i) = jointState2->values[i];
+//     }
+
+//     KDL::Frame pose1,pose2;
+//     fksolver->jntToCart(jointpositions1, pose1);
+//     fksolver->jntToCart(jointpositions2, pose2);
+
+//     return ob::Cost(pow(pose1.p.x()-pose2.p.x(),2) + pow(pose1.p.y()-pose2.p.y(),2)+ pow(pose1.p.z()-pose2.p.z(),2));
+
+// }
+
+// ob::OptimizationObjectivePtr getPathLengthObjWithCostToGo(const ob::SpaceInformationPtr& si)
+// {
+//     ob::OptimizationObjectivePtr obj(new ob::PathLengthOptimizationObjective(si));
+//     obj->setC(&TrajectoryGeneration::costToGo);
+//     return obj;
+// }
 
 bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace> start, ob::ScopedState<ob::SE3StateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory, bool &validStartState, bool &validGoalState)
 {
@@ -627,10 +663,8 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
     plannerRRT->setTreePruning(true);
     plannerRRT->setInformedSampling(true);
 
-
     ob::State *startState = pdef->getStartState(0);
 
-  
     // if (collide(startState))
     //     yInfo("Start state collides");
     // else
@@ -638,7 +672,8 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
     //     yInfo("Start state doesn't collide");
     // }
 
-    if (isValid(startState)){
+    if (isValid(startState))
+    {
         yInfo() << "Valid starting state";
         validStartState = true;
     }
@@ -655,7 +690,6 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
 
     ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
 
-
     // if (collide(goalState))
     //     yInfo("Goal state collides");
     // else
@@ -663,7 +697,8 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
     //     yInfo("Goal state doesn't collide");
     // }
 
-    if (isValid(goalState)){
+    if (isValid(goalState))
+    {
         yInfo() << "Valid goal state";
         validGoalState = true;
     }
@@ -691,7 +726,6 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
         yInfo() << pth->getStateCount();
     }
 
-
     std::size_t iState = 0;
 
     while (iState < pth->getStateCount())
@@ -710,22 +744,22 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
 
         KDL::Rotation rotKdl = KDL::Rotation::Quaternion(rot->x, rot->y, rot->z, rot->w);
         KDL::Vector posKdl = KDL::Vector(pos->values[0], pos->values[1], pos->values[2]);
-        //frame.M.Quaternion(rot->x, rot->y, rot->z, rot->w);
+        // frame.M.Quaternion(rot->x, rot->y, rot->z, rot->w);
         double x, y, z, w;
         rotKdl.GetQuaternion(x, y, z, w);
         frame.M = rotKdl;
         frame.p = posKdl;
         std::vector<double> pose = frameToVector(frame);
-        
+
         std::vector<double> currentQ(numJoints);
 
-        if(!getCurrentQ(currentQ)){
+        if (!getCurrentQ(currentQ))
+        {
             return false;
         }
 
-
         bool computeInvKin = true;
-        std::vector<double>xStart;
+        std::vector<double> xStart;
         double diffSumSquare = 0;
         for (int i = 0; i < 6; i++)
         {
@@ -744,7 +778,6 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
         KDL::JntArray goaljointpositions = KDL::JntArray(numJoints);
         KDL::JntArray goaljointpositionsRad = KDL::JntArray(numJoints);
 
-
         if (computeInvKin)
         {
 
@@ -753,49 +786,48 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
             for (unsigned int i = 0; i < qInit.rows(); i++)
             {
                 qInit(i) = currentQ[i];
-                qInitRad(i) = qInit(i)*KDL::deg2rad;
+                qInitRad(i) = qInit(i) * KDL::deg2rad;
             }
-            
 
             int foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);
-            if (foundik!=1)
+            if (foundik != 1)
             {
                 yError() << "invKin() failed";
                 return false;
-            }                                                                                                                                                                                               
-            else{
+            }
+            else
+            {
                 Bottle bPose;
-                for(int i = 0; i < 6; i++){
+                for (int i = 0; i < 6; i++)
+                {
                     bPose.addFloat64(pose[i]);
                 }
-                std::vector<double> jointsPosition;     
+                std::vector<double> jointsPosition;
                 jointsPosition.reserve(numJoints);
-                for(int i = 0; i<numJoints; i++){
-                    jointsPosition.emplace_back(goaljointpositionsRad(i)*KDL::rad2deg);
+                for (int i = 0; i < numJoints; i++)
+                {
+                    jointsPosition.emplace_back(goaljointpositionsRad(i) * KDL::rad2deg);
                 }
                 jointsTrajectory.push_back(jointsPosition);
             }
-
 
             // if (!armICartesianSolver->invKin(pose, currentQ, desireQ))
             // {
             //     yError() << "invKin() failed";
             // }
-           
         }
-        
+
         iState++;
     }
 
-//#endif
+    //#endif
     // followDiscretePath();
 
     return solutionFound;
 }
 
-
 bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::RealVectorStateSpace> start, ob::ScopedState<ob::RealVectorStateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory,
-                                                std::string & errorMessage)
+                                               std::string &errorMessage)
 {
 
     pdef->clearStartStates();
@@ -804,21 +836,21 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::RealVectorSta
     start.print();
 
     ob::RealVectorBounds bounds = space->as<ob::RealVectorStateSpace>()->getBounds();
-    for(unsigned int j=0; j<numJoints; j++){
-        yInfo()<<"Low: "<<bounds.low[j]<<" high: "<<bounds.high[j];
+    for (unsigned int j = 0; j < numJoints; j++)
+    {
+        yInfo() << "Low: " << bounds.low[j] << " high: " << bounds.high[j];
     }
-
-
 
     ob::State *startState = pdef->getStartState(0);
 
-  
-   yInfo()<<"Is startState valid?";
-    if (!isValid(startState)){
-        yInfo()<<"Not valid start state";
+    yInfo() << "Is startState valid?";
+    if (!isValid(startState))
+    {
+        yInfo() << "Not valid start state";
         if (si->satisfiesBounds(startState))
             errorMessage = errorsTrajectoryGeneration::start_collision;
-        else{
+        else
+        {
             errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
         }
         return false;
@@ -830,35 +862,34 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::RealVectorSta
 
     ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
 
-   yInfo()<<"Is goalState valid?";
+    yInfo() << "Is goalState valid?";
 
-    if (!isValid(goalState)){
-        yInfo()<<"Not valid goal state";
+    if (!isValid(goalState))
+    {
+        yInfo() << "Not valid goal state";
         if (si->satisfiesBounds(goalState))
             errorMessage = errorsTrajectoryGeneration::goal_collision;
-        else{
+        else
+        {
             errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
         }
         return false;
     }
-    yInfo()<<"goalState VALID";
-
-
-    
+    yInfo() << "goalState VALID";
+    pdef->setOptimizationObjective(getPathObjective(si));
     pdef->print();
     planner->clear();
     planner->printProperties(std::cout);
     planner->printSettings(std::cout);
     planner->setProblemDefinition(pdef);
-    yInfo()<<"setProblemDefinition done";
+    yInfo() << "setProblemDefinition done";
 
     planner->setup();
-    yInfo()<<"setup done";
+    yInfo() << "setup done";
     pdef->clearSolutionPaths();
-    yInfo()<<"clearSolutionPaths done";
+    yInfo() << "clearSolutionPaths done";
 
-
-    yInfo()<<"solve";
+    yInfo() << "solve";
     bool solutionFound = planner->solve(maxPlannerTime);
     printf("Solution Found: %d", solutionFound);
 
@@ -878,47 +909,52 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::RealVectorSta
             ob::State *state = pth->getState(iState);
 
             const ob::RealVectorStateSpace::StateType *jointState = state->as<ob::RealVectorStateSpace::StateType>();
-            
+
             std::vector<double> poseQ;
             poseQ.reserve(numJoints);
-            for(unsigned int j=0; j<numJoints; j++)
+            for (unsigned int j = 0; j < numJoints; j++)
                 poseQ.emplace_back(jointState->values[j]);
 
             jointsTrajectory.push_back(poseQ);
-            yInfo()<<poseQ;
-            
+            yInfo() << poseQ;
+
             iState++;
         }
         return true;
-    }else{
+    }
+    else
+    {
         errorMessage == errorsTrajectoryGeneration::path_not_found;
         return false;
     }
-
-
 }
 
-bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle * bGoal, std::vector<double> & desireQ, std::string & errorMessage){
-    yInfo()<<"Check goal pose";
+bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<double> &desireQ, std::string &errorMessage)
+{
+    yInfo() << "Check goal pose";
     std::vector<double> xGoal(6);
-    if (bGoal->size() != 6){
+    if (bGoal->size() != 6)
+    {
         errorMessage = errorsTrajectoryGeneration::pose_6_elements;
         return false;
     }
     for (int i = 0; i < 6; i++)
         xGoal[i] = bGoal->get(i).asFloat64();
-    yInfo() <<"Goal: "<< xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
+    yInfo() << "Goal: " << xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
 
     std::vector<double> currentQ(numJoints);
 
-    if(!getCurrentQ(currentQ)){
+    if (!getCurrentQ(currentQ))
+    {
         errorMessage = errorsTrajectoryGeneration::not_get_current_Q;
         return false;
     }
-    else{
+    else
+    {
         // Lests add the start state, just for checking
         ob::ScopedState<ob::RealVectorStateSpace> start(space);
-        for(unsigned int j=0; j<numJoints; j++){
+        for (unsigned int j = 0; j < numJoints; j++)
+        {
             start[j] = currentQ[j];
         }
 
@@ -927,16 +963,17 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle * bGoal, std::vector<d
 
         start.print();
 
-
         ob::State *startState = pdef->getStartState(0);
 
-        yInfo()<<"Check start state: ";
-  
-        if (!isValid(startState)){
-            
+        yInfo() << "Check start state: ";
+
+        if (!isValid(startState))
+        {
+
             if (si->satisfiesBounds(startState))
                 errorMessage = errorsTrajectoryGeneration::start_collision;
-            else{
+            else
+            {
                 errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
             }
             return false;
@@ -948,9 +985,9 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle * bGoal, std::vector<d
             yError() << "fwdKin failed";
             return false;
         }
-        yInfo() <<"xStart: "<< xStart[0] << " " << xStart[1] << " " << xStart[2] << " " << xStart[3] << " " << xStart[4] << " " << xStart[5];
+        yInfo() << "xStart: " << xStart[0] << " " << xStart[1] << " " << xStart[2] << " " << xStart[3] << " " << xStart[4] << " " << xStart[5];
 
-        yInfo()<<currentQ;
+        yInfo() << currentQ;
 
         KDL::JntArray qInit = KDL::JntArray(numJoints);
         KDL::JntArray qInitRad = KDL::JntArray(numJoints);
@@ -958,9 +995,9 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle * bGoal, std::vector<d
         for (unsigned int i = 0; i < qInit.rows(); i++)
         {
             qInit(i) = currentQ[i];
-            qInitRad(i) = currentQ[i]*KDL::deg2rad;
+            qInitRad(i) = currentQ[i] * KDL::deg2rad;
         }
-            
+
         KDL::JntArray goaljointpositionsRad = KDL::JntArray(numJoints);
         KDL::JntArray goaljointpositions = KDL::JntArray(numJoints);
         KDL::Frame frame = vectorToFrame(xGoal);
@@ -972,32 +1009,32 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle * bGoal, std::vector<d
         //     return false;
         // }
         int foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);
-        if (foundik!=1)
+        if (foundik != 1)
         {
             yError() << "invKin() failed";
             return false;
-        } 
-        else{   
+        }
+        else
+        {
 
             // Check if it's outside bounds
-            for(int j=0; j<numJoints; j++)
+            for (int j = 0; j < numJoints; j++)
             {
-                goaljointpositions(j) = goaljointpositionsRad(j)*KDL::rad2deg;
-                if(goaljointpositions(j)<=qmin(j))
-                    goaljointpositions(j) = qmin(j)+0.001;
-                if(goaljointpositions(j)>=qmax(j)){
-                    goaljointpositions(j) = qmax(j)-0.001;
+                goaljointpositions(j) = goaljointpositionsRad(j) * KDL::rad2deg;
+                if (goaljointpositions(j) <= qmin(j))
+                    goaljointpositions(j) = qmin(j) + 0.001;
+                if (goaljointpositions(j) >= qmax(j))
+                {
+                    goaljointpositions(j) = qmax(j) - 0.001;
                 }
 
                 desireQ[j] = goaljointpositions(j);
-
             }
-            yInfo()<<desireQ;
+            yInfo() << desireQ;
 
-         
-         
             ob::ScopedState<ob::RealVectorStateSpace> goal(space);
-            for(unsigned int j=0; j<numJoints; j++){
+            for (unsigned int j = 0; j < numJoints; j++)
+            {
                 goal[j] = goaljointpositions(j);
             }
             pdef->clearGoal();
@@ -1005,28 +1042,34 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle * bGoal, std::vector<d
             pdef->setGoalState(goal);
 
             ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
-            if(isValid(goalState)){
+            if (isValid(goalState))
+            {
                 return true;
             }
-            else{
+            else
+            {
                 if (si->satisfiesBounds(goalState))
                     errorMessage = errorsTrajectoryGeneration::goal_collision;
-                else{
+                else
+                {
                     errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
                 }
                 return false;
             }
-        }    
+        }
     }
 }
 
-bool TrajectoryGeneration::checkGoalJoints(yarp::os::Bottle * bGoal, std::string & errorMessage){
-    if (bGoal->size() != numJoints){
-        yWarning()<<errorsTrajectoryGeneration::joints_elements;
+bool TrajectoryGeneration::checkGoalJoints(yarp::os::Bottle *bGoal, std::string &errorMessage)
+{
+    if (bGoal->size() != numJoints)
+    {
+        yWarning() << errorsTrajectoryGeneration::joints_elements;
         errorMessage = errorsTrajectoryGeneration::joints_elements;
         return false;
     }
-    else{
+    else
+    {
         std::vector<double> goalQ(numJoints);
         std::vector<double> xGoal(6);
 
@@ -1038,11 +1081,11 @@ bool TrajectoryGeneration::checkGoalJoints(yarp::os::Bottle * bGoal, std::string
             yError() << "fwdKin failed";
             return false;
         }
-        yInfo() <<"Goal: "<< xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
+        yInfo() << "Goal: " << xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
 
-        
         ob::ScopedState<ob::RealVectorStateSpace> goal(space);
-        for(unsigned int j=0; j<numJoints; j++){
+        for (unsigned int j = 0; j < numJoints; j++)
+        {
             goal[j] = bGoal->get(j).asFloat64();
         }
         pdef->clearGoal();
@@ -1050,13 +1093,16 @@ bool TrajectoryGeneration::checkGoalJoints(yarp::os::Bottle * bGoal, std::string
         pdef->setGoalState(goal);
 
         ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
-        if(isValid(goalState)){
+        if (isValid(goalState))
+        {
             return true;
         }
-        else{
+        else
+        {
             if (si->satisfiesBounds(goalState))
                 errorMessage = errorsTrajectoryGeneration::goal_collision;
-            else{
+            else
+            {
                 errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
             }
             return false;
@@ -1065,19 +1111,20 @@ bool TrajectoryGeneration::checkGoalJoints(yarp::os::Bottle * bGoal, std::string
 }
 
 /************************************************************************/
-void TrajectoryGeneration::getSuperquadrics(std::vector<int> &label_idx, std::vector<std::array<float,11>> &params){
-    yInfo()<<"Lets get the superquadrics";
+void TrajectoryGeneration::getSuperquadrics(std::vector<int> &label_idx, std::vector<std::array<float, 11>> &params)
+{
+    yInfo() << "Lets get the superquadrics";
     yarp::os::Bottle cmd;
     cmd.addString("gsup");
-    yInfo()<<"Sending message..."<<cmd.toString();
+    yInfo() << "Sending message..." << cmd.toString();
     yarp::os::Bottle response;
     m_clientGetGraspingPoses.write(cmd, response);
-    yInfo()<<"Got response:"<<response.toString();
+    yInfo() << "Got response:" << response.toString();
 
-
-    for(int i=0; i<response.size(); i++){
+    for (int i = 0; i < response.size(); i++)
+    {
         label_idx.push_back(response.get(i).find("label_idx").asInt32());
-        std::array<float,11> object_params;
+        std::array<float, 11> object_params;
         object_params[0] = response.get(i).find("axes0").asFloat32();
         object_params[1] = response.get(i).find("axes1").asFloat32();
         object_params[2] = response.get(i).find("axes2").asFloat32();
@@ -1091,17 +1138,15 @@ void TrajectoryGeneration::getSuperquadrics(std::vector<int> &label_idx, std::ve
         object_params[10] = response.get(i).find("yaw").asFloat32();
         params.push_back(object_params);
 
-        yInfo()<<label_idx[i];
-        yInfo()<<object_params;
+        yInfo() << label_idx[i];
+        yInfo() << object_params;
     }
 }
-
 
 bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
 {
     yarp::os::Bottle reply;
     auto *writer = connection.getWriter();
-
 
     yarp::os::Bottle command;
     if (!command.read(connection) || writer == nullptr)
@@ -1110,14 +1155,13 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
     }
     yInfo() << "command:" << command.toString();
 
-
-
     std::vector<double> currentQ(numJoints);
 
-     
-    if (planningSpace=="cartesian"){ //TODO: Cartesian
+    if (planningSpace == "cartesian")
+    { // TODO: Cartesian
         std::vector<double> xStart;
-        if(!getCurrentQ(currentQ)){
+        if (!getCurrentQ(currentQ))
+        {
             return false;
         }
 
@@ -1126,16 +1170,17 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
             yError() << "fwdKin failed";
             return false;
         }
-        
+
         yInfo() << "Start:" << xStart[0] << " " << xStart[1] << " " << xStart[2] << " " << xStart[3] << " " << xStart[4] << " " << xStart[5];
         armSolverOptions.unput("mins");
         armSolverOptions.unput("maxs");
         yarp::os::Bottle qMin, qMax;
-        qMin.addFloat64(currentQ[0]-2.5);
-        qMin.addFloat64(currentQ[1]-2.5);
-        qMax.addFloat64(currentQ[0]+0.5);
-        qMax.addFloat64(currentQ[1]+0.5);
-        for(int i=0; i<currentQ.size(); i++){
+        qMin.addFloat64(currentQ[0] - 2.5);
+        qMin.addFloat64(currentQ[1] - 2.5);
+        qMax.addFloat64(currentQ[0] + 0.5);
+        qMax.addFloat64(currentQ[1] + 0.5);
+        for (int i = 0; i < currentQ.size(); i++)
+        {
             qMin.addFloat64(qrMin.get(i).asFloat64());
             qMax.addFloat64(qrMax.get(i).asFloat64());
         }
@@ -1146,10 +1191,9 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
         armSolverDevice.open(armSolverOptions);
         if (!armSolverDevice.isValid())
         {
-            yError() << "KDLSolver solver device for "<<deviceName<<" is not valid";
+            yError() << "KDLSolver solver device for " << deviceName << " is not valid";
             return false;
         }
-
 
         if (!armSolverDevice.view(armICartesianSolver))
         {
@@ -1266,7 +1310,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
         //         }
         //         if(!validGoalState){
         //             yInfo() <<"Goal state NOT valid";
-        //             reply.addString("Goal state NOT valid"); 
+        //             reply.addString("Goal state NOT valid");
         //         }
         //         if(validStartState && validGoalState){
         //             yInfo() << "Solution NOT found";
@@ -1275,12 +1319,14 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
         //     }
         // }
     }
-    else{ // joint space
+    else
+    { // joint space
         yInfo("Joint space");
         unsigned int nj = numJoints;
         space = ob::StateSpacePtr(new ob::RealVectorStateSpace(nj));
         ob::RealVectorBounds bounds{nj};
-        for(unsigned int j=0; j<nj; j++){
+        for (unsigned int j = 0; j < nj; j++)
+        {
             bounds.setLow(j, qmin(j));
             bounds.setHigh(j, qmax(j));
         }
@@ -1291,181 +1337,256 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
         si->setStateValidityChecker(std::bind(&TrajectoryGeneration::isValid, this, std::placeholders::_1));
         si->setup();
 
-
         pdef = ob::ProblemDefinitionPtr(new ob::ProblemDefinition(si));
 
         ob::ScopedState<ob::RealVectorStateSpace> start(space);
 
-        if(!getCurrentQ(currentQ)){
+        if (!getCurrentQ(currentQ))
+        {
             return false;
         }
-        for(unsigned int j=0; j<numJoints; j++){
+        for (unsigned int j = 0; j < numJoints; j++)
+        {
             start[j] = currentQ[j];
         }
 
-        
-        switch(command.get(0).asVocab32()){
+        switch (command.get(0).asVocab32())
+        {
 
-            case VOCAB_HELP:{
-                yInfo() <<"help";
-                static auto usage = makeUsage();
-                reply.append(usage);
-            }break;
-            case VOCAB_CMD_SET_SUPERQUADRICS:{
-                std::vector<int> label_idx; 
-                std::vector<std::array<float,11>> params;
-                getSuperquadrics(label_idx, params);
-                m_checkCollisions->setSuperquadrics(label_idx, params);
-                m_checkCollisions->updateEnvironmentCollisionObjects();
-
-            }break;
-            case VOCAB_CHECK_GOAL_POSE:
-                {yInfo() << "Check goal pose (x, y, z, rotx, roty, rotz)";
+        case VOCAB_HELP:
+        {
+            yInfo() << "help";
+            static auto usage = makeUsage();
+            reply.append(usage);
+        }
+        break;
+        case VOCAB_CMD_SET_SUPERQUADRICS:
+        {
+            std::vector<int> label_idx;
+            std::vector<std::array<float, 11>> params;
+            getSuperquadrics(label_idx, params);
+            m_checkCollisions->setSuperquadrics(label_idx, params);
+            m_checkCollisions->updateEnvironmentCollisionObjects();
+        }
+        break;
+        case VOCAB_CHECK_GOAL_POSE:
+        {
+            yInfo() << "Check goal pose (x, y, z, rotx, roty, rotz)";
+            std::vector<double> desireQ(numJoints);
+            std::string errorMessage;
+            if (!checkGoalPose(command.get(1).asList(), desireQ, errorMessage))
+            {
+                reply.addVocab32(VOCAB_FAILED);
+                reply.addString(errorMessage);
+            }
+            else
+            {
+                yInfo() << "Valid goal pose";
+                reply.addVocab32(VOCAB_OK);
+                Bottle bJointsPosition;
+                for (int j = 0; j < numJoints; j++)
+                {
+                    bJointsPosition.addFloat64(desireQ[j]);
+                }
+                reply.addList() = bJointsPosition;
+            }
+        }
+        break;
+        case VOCAB_CHECK_GOAL_JOINTS:
+        {
+            yInfo() << "Check goal joints (j0, j1, ..., jn)";
+            std::string errorMessage;
+            if (!checkGoalJoints(command.get(1).asList(), errorMessage))
+            {
+                reply.addVocab32(VOCAB_FAILED);
+                reply.addString(errorMessage);
+            }
+            else
+            {
+                reply.addVocab32(VOCAB_OK);
+            }
+        }
+        break;
+        case VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES:
+        {
+            yInfo() << "Compute inverse kinematics form lisy poses";
+            // yInfo()<<command.toString();
+            yarp::os::Bottle *poses = command.get(1).asList();
+            Bottle bJointsTrajectory;
+            for (int i = 0; i < poses->size(); i++)
+            {
+                yarp::os::Bottle *pose = poses->get(i).asList();
                 std::vector<double> desireQ(numJoints);
                 std::string errorMessage;
-                if(!checkGoalPose(command.get(1).asList(), desireQ, errorMessage)){
-                    reply.addVocab32(VOCAB_FAILED);
-                    reply.addString(errorMessage);
-                }
-                else{
-                    yInfo() << "Valid goal pose";
-                    reply.addVocab32(VOCAB_OK);
+                if (checkGoalPose(pose, desireQ, errorMessage))
+                {
                     Bottle bJointsPosition;
-                    for(int j = 0; j<numJoints; j++){
+                    for (int j = 0; j < numJoints; j++)
+                    {
                         bJointsPosition.addFloat64(desireQ[j]);
                     }
-                    reply.addList() = bJointsPosition;
+                    bJointsTrajectory.addList() = bJointsPosition;
                 }
-                }break;
-            case VOCAB_CHECK_GOAL_JOINTS:
-                {
-                yInfo() << "Check goal joints (j0, j1, ..., jn)";
-                std::string errorMessage;
-                if(!checkGoalJoints(command.get(1).asList(), errorMessage)){
-                    reply.addVocab32(VOCAB_FAILED);
-                    reply.addString(errorMessage);
-                }
-                else{
-                    reply.addVocab32(VOCAB_OK);
-                }
-                }break;
-            case VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES:
+            }
+            if (bJointsTrajectory.size() > 0)
             {
-                yInfo()<< "Compute inverse kinematics form lisy poses";
-                // yInfo()<<command.toString();
-                yarp::os::Bottle * poses = command.get(1).asList();
-                Bottle bJointsTrajectory;
-                for(int i=0; i<poses->size(); i++){
-                    yarp::os::Bottle * pose = poses->get(i).asList();
-                    std::vector<double> desireQ(numJoints);
-                    std::string errorMessage;
-                    if(checkGoalPose(pose, desireQ, errorMessage)){
+                reply.addVocab32(VOCAB_OK);
+                reply.addList() = bJointsTrajectory;
+            }
+            else
+            {
+                reply.addVocab32(VOCAB_FAILED);
+                reply.addList() = bJointsTrajectory;
+            }
+        }
+        break;
+        case VOCAB_COMPUTE_JOINTS_PATH_GOAL_POSE:
+        {
+            yInfo() << "Compute path in joint space to goal pose (x, y, z, rotx, roty, rotz";
+            std::vector<double> desireQ(numJoints);
+            std::string errorMessage;
+            if (!checkGoalPose(command.get(1).asList(), desireQ, errorMessage))
+            {
+                reply.addVocab32(VOCAB_FAILED);
+                reply.addString(errorMessage);
+            }
+            else
+            {
+                ob::ScopedState<ob::RealVectorStateSpace> goal(space);
+                for (unsigned int j = 0; j < numJoints; j++)
+                {
+                    goal[j] = desireQ[j];
+                }
+                pdef->clearGoal();
+                pdef->setGoalState(goal);
+
+                std::vector<std::vector<double>> jointsTrajectory;
+                std::string errorMessage;
+                yInfo() << "Lets compute the path";
+                bool solutionFound = computeDiscretePath(start, goal, jointsTrajectory, errorMessage);
+
+                if (solutionFound)
+                {
+                    reply.addVocab32(VOCAB_OK);
+                    Bottle bJointsTrajectory;
+                    for (int i = 0; i < jointsTrajectory.size(); i++)
+                    {
                         Bottle bJointsPosition;
-                        for(int j = 0; j<numJoints; j++){
-                            bJointsPosition.addFloat64(desireQ[j]);
+                        for (int j = 0; j < numJoints; j++)
+                        {
+                            bJointsPosition.addFloat64(jointsTrajectory[i][j]);
                         }
                         bJointsTrajectory.addList() = bJointsPosition;
                     }
+                    reply.addList() = bJointsTrajectory;
                 }
-                if (bJointsTrajectory.size()>0){
-                    reply.addVocab32(VOCAB_OK);
-                    reply.addList() =bJointsTrajectory;
-                }
-                else{
-                    reply.addVocab32(VOCAB_FAILED);
-                    reply.addList() =bJointsTrajectory;
-                }
-
-
-            }break;
-            case VOCAB_COMPUTE_JOINTS_PATH_GOAL_POSE:
+                else
                 {
-                    yInfo()<<"Compute path in joint space to goal pose (x, y, z, rotx, roty, rotz";
-                    std::vector<double> desireQ(numJoints);
-                    std::string errorMessage;
-                    if(!checkGoalPose(command.get(1).asList(), desireQ, errorMessage)){
+                    reply.addVocab32(VOCAB_FAILED);
+                    reply.addString(errorMessage);
+                }
+            }
+        }
+        break;
+        case VOCAB_COMPUTE_JOINTS_PATH_GOAL_JOINTS:
+        {
+            yInfo() << "Compute path in joint space to goal joints configuration (j0, j1, ..., jn)";
+            Bottle *bGoal = command.get(1).asList();
+            yInfo() << bGoal->toString();
+            std::string errorMessage;
+            if (bGoal->size() != numJoints)
+            {
+                reply.addVocab32(VOCAB_FAILED);
+                reply.addString(errorsTrajectoryGeneration::joints_elements);
+            }
+            else
+            {
+                ob::ScopedState<ob::RealVectorStateSpace> goal(space);
+                for (unsigned int j = 0; j < numJoints; j++)
+                {
+                    goal[j] = bGoal->get(j).asFloat64();
+                }
+                yInfo() << "goal: " << goal[0] << " " << goal[1] << " " << goal[2] << " " << goal[3] << " " << goal[4];
+                pdef->clearGoal();
+                pdef->setGoalState(goal);
+
+                ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
+
+                if (!si->satisfiesBounds(goalState))
+                {
+                    errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
+                    return false;
+                }
+                else
+                {
+                    std::vector<std::vector<double>> jointsTrajectory;
+                    bool solutionFound = computeDiscretePath(start, goal, jointsTrajectory, errorMessage);
+                    if (solutionFound)
+                    {
+                        reply.addVocab32(VOCAB_OK);
+                        Bottle bJointsTrajectory;
+                        for (int i = 0; i < jointsTrajectory.size(); i++)
+                        {
+                            Bottle bJointsPosition;
+                            for (int j = 0; j < numJoints; j++)
+                            {
+                                bJointsPosition.addFloat64(jointsTrajectory[i][j]);
+                            }
+                            bJointsTrajectory.addList() = bJointsPosition;
+                        }
+                        reply.addList() = bJointsTrajectory;
+                    }
+                    else
+                    {
                         reply.addVocab32(VOCAB_FAILED);
                         reply.addString(errorMessage);
                     }
-                    else{
-                        ob::ScopedState<ob::RealVectorStateSpace> goal(space);
-                        for(unsigned int j=0; j<numJoints; j++){
-                            goal[j] = desireQ[j];
-                        }
-                        pdef->clearGoal();
-                        pdef->setGoalState(goal);
-
-                        std::vector<std::vector<double>>jointsTrajectory;
-                        std::string errorMessage;
-                        yInfo()<<"Lets compute the path";
-                        bool solutionFound = computeDiscretePath(start, goal, jointsTrajectory, errorMessage);
-
-                        if (solutionFound){
-                            reply.addVocab32(VOCAB_OK);
-                            Bottle bJointsTrajectory;
-                            for(int i=0; i<jointsTrajectory.size(); i++){
-                                Bottle bJointsPosition;
-                                for(int j = 0; j<numJoints; j++){
-                                    bJointsPosition.addFloat64(jointsTrajectory[i][j]);
-                                }
-                                bJointsTrajectory.addList() = bJointsPosition;
-                            }
-                            reply.addList() =bJointsTrajectory;
-                        }
-                        else{
-                            reply.addVocab32(VOCAB_FAILED);
-                            reply.addString(errorMessage);
-                        }
-                    }
-                }break;
-            case VOCAB_COMPUTE_JOINTS_PATH_GOAL_JOINTS:
-                {yInfo()<<"Compute path in joint space to goal joints configuration (j0, j1, ..., jn)";
-                Bottle * bGoal = command.get(1).asList();
-                yInfo()<<bGoal->toString();
-                std::string errorMessage;
-                if (bGoal->size() != numJoints){
-                    reply.addVocab32(VOCAB_FAILED);
-                    reply.addString(errorsTrajectoryGeneration::joints_elements);
                 }
-                else{
-                    ob::ScopedState<ob::RealVectorStateSpace> goal(space);
-                    for(unsigned int j=0; j<numJoints; j++){
-                        goal[j] = bGoal->get(j).asFloat64();
-                    }
-                    yInfo()<<"goal: "<<goal[0]<<" "<<goal[1]<<" "<<goal[2]<<" "<<goal[3]<<" "<<goal[4];
-                    pdef->clearGoal();
-                    pdef->setGoalState(goal);
-
-                    ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
-
-                    if (!si->satisfiesBounds(goalState)){
-                        errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
-                        return false;
-                    }
-                    else{
-                        std::vector<std::vector<double>>jointsTrajectory;
-                        bool solutionFound = computeDiscretePath(start, goal, jointsTrajectory, errorMessage);
-                        if (solutionFound){
-                            reply.addVocab32(VOCAB_OK);
-                            Bottle bJointsTrajectory;
-                            for(int i=0; i<jointsTrajectory.size(); i++){
-                                Bottle bJointsPosition;
-                                for(int j = 0; j<numJoints; j++){
-                                    bJointsPosition.addFloat64(jointsTrajectory[i][j]);
-                                }
-                                bJointsTrajectory.addList() = bJointsPosition;
-                            }
-                            reply.addList() =bJointsTrajectory;
-                        }
-                        else{
-                            reply.addVocab32(VOCAB_FAILED);
-                            reply.addString(errorMessage);
-                        }
-                    }
-                }
-                }break;
-
-            }      
+            }
+        }
+        break;
+        }
     }
     return reply.write(*writer);
+}
+
+
+
+ob::OptimizationObjectivePtr TrajectoryGeneration::getPathObjective(const ob::SpaceInformationPtr& si)
+{
+    return ob::OptimizationObjectivePtr(new MinimizeDistanceOptimizationObjective(si));
+}
+
+
+
+ob::Cost MinimizeDistanceOptimizationObjective::stateCost(const ob::State *s) const
+{
+    return identityCost();
+}
+
+
+ob::Cost MinimizeDistanceOptimizationObjective::motionCost(const ob::State *s1, const ob::State *s2) const
+{
+
+    const ob::RealVectorStateSpace::StateType *jointState1 = s1->as<ob::RealVectorStateSpace::StateType>();
+    const ob::RealVectorStateSpace::StateType *jointState2 = s2->as<ob::RealVectorStateSpace::StateType>();
+
+    KDL::JntArray jointpositions1 = KDL::JntArray(numJoints);
+    KDL::JntArray jointpositions2 = KDL::JntArray(numJoints);
+
+    for (unsigned int i = 0; i < jointpositions1.rows(); i++)
+    {
+        jointpositions1(i) = jointState1->values[i];
+        jointpositions2(i) = jointState2->values[i];
+    }
+
+    KDL::Frame pose1, pose2;
+    fksolver->JntToCart(jointpositions1, pose1);
+    fksolver->JntToCart(jointpositions2, pose2);
+
+    return ob::Cost(pow(pose1.p.x() - pose2.p.x(), 2) + pow(pose1.p.y() - pose2.p.y(), 2) + pow(pose1.p.z() - pose2.p.z(), 2));
+}
+
+ob::Cost MinimizeDistanceOptimizationObjective::motionCostHeuristic(const ob::State *s1, const ob::State *s2) const{
+    return this->motionCost(s1,s2);
 }

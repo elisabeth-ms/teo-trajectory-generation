@@ -15,8 +15,8 @@
 #include <ompl/base/goals/GoalState.h>
 #include <ompl/geometric/planners/rrt/BiTRRT.h>
 #include <ompl/geometric/planners/rrt/RRTConnect.h>
-
-
+#include <ompl/base/OptimizationObjective.h>
+#include <ompl/base/objectives/PathLengthOptimizationObjective.h>
 #include </usr/local/include/nlopt.hpp>
 #include "trac_ik/trac_ik.hpp"
 
@@ -27,6 +27,8 @@
 
 #include <string>
 #include <ostream>
+
+#include <ompl/geometric/planners/rrt/RRTsharp.h>
 
 #define DEFAULT_ROBOT "teo" // teo or teoSim (default teo)
 #define DEFAULT_PLANNING_SPACE "joint" // joint or cartesian
@@ -58,6 +60,21 @@ constexpr auto VOCAB_COMPUTE_JOINTS_PATH_GOAL_JOINTS = yarp::os::createVocab32('
 constexpr auto VOCAB_UPDATE_POINTCLOUD = yarp::os::createVocab32('u','p','c');
 constexpr auto VOCAB_CMD_SET_SUPERQUADRICS = yarp::os::createVocab32('s', 's', 'u', 'p');
 constexpr auto VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES = yarp::os::createVocab32('c', 'j', 'l', 'p');
+
+
+
+
+class MinimizeDistanceOptimizationObjective : public ob::OptimizationObjective
+{
+public:
+    MinimizeDistanceOptimizationObjective(const ob::SpaceInformationPtr &si):
+        ob::OptimizationObjective(si) {
+          setCostToGoHeuristic(ob::goalRegionCostToGo);
+        }
+    virtual ob::Cost stateCost(const ob::State* s) const;
+    virtual ob::Cost motionCost(const ob::State *s1, const ob::State *s2) const;
+    virtual ob::Cost motionCostHeuristic(const ob::State *s1, const ob::State *s2) const;
+};
 
 
 /**
@@ -98,7 +115,6 @@ constexpr auto VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES = yarp::os::createVocab32('c
             /** kinematics config file **/
             std::string kinematicsConfig;
 
-            KDL::Chain chain;
             KDL::JntArray qmin;
             KDL::JntArray qmax;
             std::vector<double> m_qmin;
@@ -113,7 +129,6 @@ constexpr auto VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES = yarp::os::createVocab32('c
             /** Axes number **/
             int numArmJoints;
             int numTrunkJoints;
-            int numJoints;
             /** Device **/
             yarp::dev::PolyDriver armDevice;
             yarp::dev::PolyDriver trunkDevice;
@@ -173,7 +188,8 @@ constexpr auto VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES = yarp::os::createVocab32('c
 
             TRAC_IK::TRAC_IK * iksolver;
             KDL::Twist boundsSolver = KDL::Twist::Zero();
-            
+            KDL::Chain chain;
+
 
             yarp::os::Port inPort;
 
@@ -197,8 +213,14 @@ constexpr auto VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES = yarp::os::createVocab32('c
 
             bool computeDiscretePath(ob::ScopedState<ob::SE3StateSpace> start, ob::ScopedState<ob::SE3StateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory, bool &validStartState, bool &validGoalState);
             bool computeDiscretePath(ob::ScopedState<ob::RealVectorStateSpace> start, ob::ScopedState<ob::RealVectorStateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory, std::string & errorMessage);
+            ob::OptimizationObjectivePtr getPathObjective(const ob::SpaceInformationPtr& si);
+
+            
             std::vector<double> goalQ;
             ob::StateSpacePtr space;
+            // ob::Cost costToGo(const State* state1, const State* state2);
+            // ob::OptimizationObjectivePtr getPathLengthObjWithCostToGo(const ob::SpaceInformationPtr& si);
+
 
 
           yarp::os::Bottle makeUsage()
