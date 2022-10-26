@@ -26,6 +26,8 @@ using namespace roboticslab::KdlVectorConverter;
 
 KDL::ChainFkSolverPos_recursive * fksolver;
 int numJoints;
+KDL::JntArray * distQLimits;
+
 
 std::vector<std::string> availablePlanners = {"RRTConnect", "RRTStar", "RRTSharp"};
 
@@ -183,6 +185,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     qmax.resize(numJoints);
     m_qmin.resize(numJoints);
     m_qmax.resize(numJoints);
+    distQLimits = new  KDL::JntArray(numJoints);
 
     for (unsigned int joint = 0; joint < numJoints; joint++)
     {
@@ -192,6 +195,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         qmax(joint) = max;
         m_qmin[joint] = min;
         m_qmax[joint] = max;
+        (*distQLimits)(joint) = max-min;
     }
 
     changeJointsLimitsFromConfigFile(qmin, config, "qmin");
@@ -406,7 +410,8 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     else if(plannerType == "RRTSharp"){
         auto plannerRRT = (new og::RRTsharp(si));
         plannerRRT->setRange(plannerRange);
-        plannerRRT->setGoalBias(0.1);
+        plannerRRT->setGoalBias(0.2);
+        plannerRRT->setInformedSampling(true);
         planner = ob::PlannerPtr(plannerRRT);
     }
 
@@ -415,6 +420,10 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         yError() << "Could not open" << inPort.getName() << "open";
         return false;
     }
+    
+    generatorsVelProfile.resize(numJoints);
+    for(int i=0; i<numJoints; i++)
+        generatorsVelProfile[i] = new KDL::VelocityProfile_Trap(max_vel, max_acc);
 
     rpcServer.setReader(*this);
 
@@ -978,6 +987,7 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<do
             }
             return false;
         }
+        yInfo()<<"Start state is valid";
         std::vector<double> xStart(6);
 
         if (!armICartesianSolver->fwdKin(currentQ, xStart))
@@ -1409,7 +1419,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
         break;
         case VOCAB_COMPUTE_JOINTS_FROM_LIST_POSES:
         {
-            yInfo() << "Compute inverse kinematics form lisy poses";
+            yInfo() << "Compute inverse kinematics from list poses";
             // yInfo()<<command.toString();
             yarp::os::Bottle *poses = command.get(1).asList();
             Bottle bJointsTrajectory;
@@ -1435,6 +1445,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
             }
             else
             {
+                printf("Solution NOT found!");
                 reply.addVocab32(VOCAB_FAILED);
                 reply.addList() = bJointsTrajectory;
             }
@@ -1520,17 +1531,21 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
                 else
                 {
                     std::vector<std::vector<double>> jointsTrajectory;
+                    std::vector<std::vector<double>> outJointsTrajectory;
+
                     bool solutionFound = computeDiscretePath(start, goal, jointsTrajectory, errorMessage);
                     if (solutionFound)
                     {
+                        getTrajectoryWithVelocityProfile(jointsTrajectory, outJointsTrajectory);
+                        // outJointsTrajectory = jointsTrajectory;
                         reply.addVocab32(VOCAB_OK);
                         Bottle bJointsTrajectory;
-                        for (int i = 0; i < jointsTrajectory.size(); i++)
+                        for (int i = 0; i < outJointsTrajectory.size(); i++)
                         {
                             Bottle bJointsPosition;
                             for (int j = 0; j < numJoints; j++)
                             {
-                                bJointsPosition.addFloat64(jointsTrajectory[i][j]);
+                                bJointsPosition.addFloat64(outJointsTrajectory[i][j]);
                             }
                             bJointsTrajectory.addList() = bJointsPosition;
                         }
@@ -1550,7 +1565,40 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
     return reply.write(*writer);
 }
 
+bool TrajectoryGeneration::getTrajectoryWithVelocityProfile(const std::vector<std::vector<double>> &jointsTrajectory, std::vector<std::vector<double>> &outJointsTrajectory){
+    outJointsTrajectory.clear();
+    for (unsigned int pnt=0; pnt<jointsTrajectory.size()-1; pnt++){
+        // generate initial profiles
+        printf("generate initial profiles\n");
+        for (unsigned int i=0; i<generatorsVelProfile.size(); i++)
+            generatorsVelProfile[i]->SetProfile(jointsTrajectory[pnt][i], jointsTrajectory[pnt+1][i]);
+         // find profile that takes most time
+        printf("find profile that takes most time\n");
+        double max_time = 0.04;
+        for (unsigned int i=0; i<generatorsVelProfile.size(); i++)
+            if (generatorsVelProfile[i]->Duration() > max_time)
+                max_time = generatorsVelProfile[i]->Duration();
+           // generate profiles with max time
+        printf("generate profiles with max time\n");
+        for (unsigned int i=0; i<generatorsVelProfile.size(); i++)
+            generatorsVelProfile[i]->SetProfileDuration(jointsTrajectory[pnt][i], jointsTrajectory[pnt+1][i], max_time);
+        int steps = (int)(max_time/0.04);
+        double time = 0;
 
+        for (unsigned int s=0; s<=steps; s++){
+            std::vector<double>jointsPosition;
+            printf("jointsPosition: ");
+            for (unsigned int i=0; i<generatorsVelProfile.size(); i++){
+                jointsPosition.push_back(generatorsVelProfile[i]->Pos(time));
+                printf("%f ", jointsPosition[i]);
+            }
+            printf("\n");
+            time += max_time/(double)steps;
+            outJointsTrajectory.push_back(jointsPosition);
+        }
+    }
+    return true;
+}
 
 ob::OptimizationObjectivePtr TrajectoryGeneration::getPathObjective(const ob::SpaceInformationPtr& si)
 {
@@ -1573,18 +1621,34 @@ ob::Cost MinimizeDistanceOptimizationObjective::motionCost(const ob::State *s1, 
 
     KDL::JntArray jointpositions1 = KDL::JntArray(numJoints);
     KDL::JntArray jointpositions2 = KDL::JntArray(numJoints);
-
+    double jointsCost = 0;
+    
+    float w_joint = 1.0;
     for (unsigned int i = 0; i < jointpositions1.rows(); i++)
     {
         jointpositions1(i) = jointState1->values[i];
         jointpositions2(i) = jointState2->values[i];
+        if(i == 0){
+            w_joint = 5.0;
+        }
+        else{
+            w_joint = 1.0;
+        }
+        jointsCost+= w_joint*abs(jointpositions2(i)-jointpositions1(i))/((*distQLimits)(i));
+
     }
 
-    KDL::Frame pose1, pose2;
-    fksolver->JntToCart(jointpositions1, pose1);
-    fksolver->JntToCart(jointpositions2, pose2);
+    jointsCost = jointsCost/jointpositions1.rows();
 
-    return ob::Cost(pow(pose1.p.x() - pose2.p.x(), 2) + pow(pose1.p.y() - pose2.p.y(), 2) + pow(pose1.p.z() - pose2.p.z(), 2));
+
+
+    // KDL::Frame pose1, pose2;
+    // fksolver->JntToCart(jointpositions1, pose1);
+    // fksolver->JntToCart(jointpositions2, pose2);
+
+    // double positionCost = pow(pose1.p.x() - pose2.p.x(), 2) + pow(pose1.p.y() - pose2.p.y(), 2) + pow(pose1.p.z() - pose2.p.z(), 2);
+    
+    return ob::Cost(jointsCost);
 }
 
 ob::Cost MinimizeDistanceOptimizationObjective::motionCostHeuristic(const ob::State *s1, const ob::State *s2) const{

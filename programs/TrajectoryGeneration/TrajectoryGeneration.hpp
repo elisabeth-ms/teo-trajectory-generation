@@ -30,6 +30,9 @@
 
 #include <ompl/geometric/planners/rrt/RRTsharp.h>
 
+#include <kdl/velocityprofile.hpp>
+#include <kdl/velocityprofile_trap.hpp>
+
 #define DEFAULT_ROBOT "teo" // teo or teoSim (default teo)
 #define DEFAULT_PLANNING_SPACE "joint" // joint or cartesian
 #define DEFAULT_PLANNER "RRTConnect" //RRTCONNECT, RRTstar
@@ -117,8 +120,8 @@ public:
 
             KDL::JntArray qmin;
             KDL::JntArray qmax;
-            std::vector<double> m_qmin;
-            std::vector<double> m_qmax;
+std::vector<double> m_qmin;
+std::vector<double> m_qmax;
 
             std::vector<std::array<float,3>>m_boxShapes;
             std::vector<std::array<float,3>>m_boxShapesFixedObjects;
@@ -189,8 +192,9 @@ public:
             TRAC_IK::TRAC_IK * iksolver;
             KDL::Twist boundsSolver = KDL::Twist::Zero();
             KDL::Chain chain;
-
-
+            std::vector<KDL::VelocityProfile*> generatorsVelProfile;
+            float max_vel = 20.0;
+            float max_acc  = 10.0;
             yarp::os::Port inPort;
 
             // boundsSolver.
@@ -213,6 +217,9 @@ public:
 
             bool computeDiscretePath(ob::ScopedState<ob::SE3StateSpace> start, ob::ScopedState<ob::SE3StateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory, bool &validStartState, bool &validGoalState);
             bool computeDiscretePath(ob::ScopedState<ob::RealVectorStateSpace> start, ob::ScopedState<ob::RealVectorStateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory, std::string & errorMessage);
+            
+            bool getTrajectoryWithVelocityProfile(const std::vector<std::vector<double>> &jointsTrajectory, std::vector<std::vector<double>> &outJointsTrajectory);
+
             ob::OptimizationObjectivePtr getPathObjective(const ob::SpaceInformationPtr& si);
 
             
