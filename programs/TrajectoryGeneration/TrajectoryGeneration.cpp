@@ -24,10 +24,9 @@ using namespace roboticslab::KdlVectorConverter;
 #define DEFAULT_PRUNE_THRESHOLD 0.5
 #define DEFAULT_MAX_PLANNER_TIME 5.0
 
-KDL::ChainFkSolverPos_recursive * fksolver;
+KDL::ChainFkSolverPos_recursive *fksolver;
 int numJoints;
-KDL::JntArray * distQLimits;
-
+KDL::JntArray *distQLimits;
 
 std::vector<std::string> availablePlanners = {"RRTConnect", "RRTStar", "RRTSharp"};
 
@@ -185,7 +184,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     qmax.resize(numJoints);
     m_qmin.resize(numJoints);
     m_qmax.resize(numJoints);
-    distQLimits = new  KDL::JntArray(numJoints);
+    distQLimits = new KDL::JntArray(numJoints);
 
     for (unsigned int joint = 0; joint < numJoints; joint++)
     {
@@ -195,7 +194,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         qmax(joint) = max;
         m_qmin[joint] = min;
         m_qmax[joint] = max;
-        (*distQLimits)(joint) = max-min;
+        (*distQLimits)(joint) = max - min;
     }
 
     changeJointsLimitsFromConfigFile(qmin, config, "qmin");
@@ -255,9 +254,8 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         return false;
     }
 
-    m_clientGetGraspingPoses.open("/client");
-    yarp::os::Network::connect("/client", "/getGraspingPoses/rpc:s");
-
+    m_clientGetGraspingPoses.open(prefix + "/getGraspingPoses/rpc:c");
+    yarp::os::Network::connect(robot + prefix + "/getGraspingPoses/rpc:c", "/getGraspingPoses/rpc:s");
     // Init collisions objects
     if (deviceName == "trunkAndRightArm")
         chain = makeTeoTrunkAndRightArmKinematicsFromDH();
@@ -321,7 +319,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
 
     nlopt_opt opt_obo;
     opt_obo = nlopt_create(NLOPT_LN_BOBYQA, numJoints);
-    iksolver = new TRAC_IK::TRAC_IK(chain, qminRad, qmaxRad, timeout_in_secs, 0.002, TRAC_IK::Speed);
+    iksolver = new TRAC_IK::TRAC_IK(chain, qminRad, qmaxRad, timeout_in_secs, 0.0005, TRAC_IK::Speed);
     boundsSolver.vel.x(0.0005);
     boundsSolver.vel.y(0.0005);
     boundsSolver.vel.z(0.0005);
@@ -330,7 +328,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     boundsSolver.rot.z(0.05);
 
     fksolver = new KDL::ChainFkSolverPos_recursive(chain);
-    
+
     if (planningSpace == "cartesian")
     { // cartesian space
         space = ob::StateSpacePtr(new ob::SE3StateSpace());
@@ -355,7 +353,6 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         si->setup();
 
         pdef = ob::ProblemDefinitionPtr(new ob::ProblemDefinition(si));
-
     }
     else
     { // joint space
@@ -375,8 +372,6 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         pdef = ob::ProblemDefinitionPtr(new ob::ProblemDefinition(si));
 
         pdef->setOptimizationObjective(getPathObjective(si));
-
-
     }
 
     bool availablePlannerSelected = false;
@@ -407,7 +402,8 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         plannerRRT->setInformedSampling(true);
         planner = ob::PlannerPtr(plannerRRT);
     }
-    else if(plannerType == "RRTSharp"){
+    else if (plannerType == "RRTSharp")
+    {
         auto plannerRRT = (new og::RRTsharp(si));
         plannerRRT->setRange(plannerRange);
         plannerRRT->setGoalBias(0.2);
@@ -420,9 +416,9 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
         yError() << "Could not open" << inPort.getName() << "open";
         return false;
     }
-    
+
     generatorsVelProfile.resize(numJoints);
-    for(int i=0; i<numJoints; i++)
+    for (int i = 0; i < numJoints; i++)
         generatorsVelProfile[i] = new KDL::VelocityProfile_Trap(max_vel, max_acc);
 
     rpcServer.setReader(*this);
@@ -462,7 +458,7 @@ bool TrajectoryGeneration::openDevices()
             yError() << "Problems acquiring numJoints";
         else
             numJoints = joints;
-            yWarning() << "Number of joints:" << numJoints;
+        yWarning() << "Number of joints:" << numJoints;
     }
 
     if (!device.view(iControlLimits))
@@ -619,6 +615,7 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
         if (jointsInsideBounds)
         {
             bool collide = m_checkCollisions->collision();
+            yInfo() << "Collide: " << collide;
             return !collide;
         }
         else
@@ -829,8 +826,8 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
         iState++;
     }
 
-    //#endif
-    // followDiscretePath();
+    // #endif
+    //  followDiscretePath();
 
     return solutionFound;
 }
@@ -938,6 +935,104 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::RealVectorSta
     }
 }
 
+bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, const std::vector<double> &currentQ, std::vector<double> &desireQ, std::string &errorMessage)
+{
+    yInfo() << "Check goal pose";
+    std::vector<double> xGoal(6);
+    if (bGoal->size() != 6)
+    {
+        errorMessage = errorsTrajectoryGeneration::pose_6_elements;
+        return false;
+    }
+    for (int i = 0; i < 6; i++)
+        xGoal[i] = bGoal->get(i).asFloat64();
+    yInfo() << "Goal: " << xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
+
+    // Lests add the start state, just for checking
+    ob::ScopedState<ob::RealVectorStateSpace> start(space);
+    for (unsigned int j = 0; j < numJoints; j++)
+    {
+        start[j] = currentQ[j];
+    }
+
+    pdef->clearStartStates();
+    pdef->addStartState(start);
+
+    start.print();
+
+    ob::State *startState = pdef->getStartState(0);
+
+    yInfo() << "Check start state: ";
+
+    if (!isValid(startState))
+    {
+        return false;
+    }
+
+    KDL::JntArray qInit = KDL::JntArray(numJoints);
+    KDL::JntArray qInitRad = KDL::JntArray(numJoints);
+
+    for (unsigned int i = 0; i < qInit.rows(); i++)
+    {
+        qInit(i) = currentQ[i];
+        qInitRad(i) = currentQ[i] * KDL::deg2rad;
+    }
+
+    KDL::JntArray goaljointpositionsRad = KDL::JntArray(numJoints);
+    KDL::JntArray goaljointpositions = KDL::JntArray(numJoints);
+    KDL::Frame frame = vectorToFrame(xGoal);
+
+    int foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);
+    if (foundik != 1)
+    {
+        yError() << "invKin() failed";
+        return false;
+    }
+    else
+    {
+
+        // Check if it's outside bounds
+        for (int j = 0; j < numJoints; j++)
+        {
+            goaljointpositions(j) = goaljointpositionsRad(j) * KDL::rad2deg;
+            if (goaljointpositions(j) <= qmin(j))
+                goaljointpositions(j) = qmin(j) + 0.001;
+            if (goaljointpositions(j) >= qmax(j))
+            {
+                goaljointpositions(j) = qmax(j) - 0.001;
+            }
+
+            desireQ[j] = goaljointpositions(j);
+        }
+        yInfo() << desireQ;
+
+        ob::ScopedState<ob::RealVectorStateSpace> goal(space);
+        for (unsigned int j = 0; j < numJoints; j++)
+        {
+            goal[j] = goaljointpositions(j);
+        }
+        pdef->clearGoal();
+
+        pdef->setGoalState(goal);
+
+        ob::State *goalState = pdef->getGoal()->as<ob::GoalState>()->getState();
+        if (isValid(goalState))
+        {
+            return true;
+        }
+        else
+        {
+            if (si->satisfiesBounds(goalState))
+                errorMessage = errorsTrajectoryGeneration::goal_collision;
+            else
+            {
+                errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
+            }
+            return false;
+        }
+    }
+}
+
 bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<double> &desireQ, std::string &errorMessage)
 {
     yInfo() << "Check goal pose";
@@ -987,7 +1082,7 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<do
             }
             return false;
         }
-        yInfo()<<"Start state is valid";
+        yInfo() << "Start state is valid";
         std::vector<double> xStart(6);
 
         if (!armICartesianSolver->fwdKin(currentQ, xStart))
@@ -1423,13 +1518,27 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
             // yInfo()<<command.toString();
             yarp::os::Bottle *poses = command.get(1).asList();
             Bottle bJointsTrajectory;
+            std::vector<double> currentQ(numJoints);
+            std::vector<double> desireQ(numJoints);
+
             for (int i = 0; i < poses->size(); i++)
             {
+                if (i==0){
+                 if (!getCurrentQ(currentQ))
+                    {
+                        reply.addVocab32(VOCAB_FAILED);
+                        return false;
+                    }
+                }
+                else{
+                    currentQ = desireQ;
+                }
                 yarp::os::Bottle *pose = poses->get(i).asList();
-                std::vector<double> desireQ(numJoints);
                 std::string errorMessage;
-                if (checkGoalPose(pose, desireQ, errorMessage))
+                std::vector<double> auxDesireQ(numJoints);
+                if (checkGoalPose(pose,currentQ, auxDesireQ, errorMessage))
                 {
+                    desireQ = auxDesireQ;
                     Bottle bJointsPosition;
                     for (int j = 0; j < numJoints; j++)
                     {
@@ -1536,16 +1645,16 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
                     bool solutionFound = computeDiscretePath(start, goal, jointsTrajectory, errorMessage);
                     if (solutionFound)
                     {
-                        getTrajectoryWithVelocityProfile(jointsTrajectory, outJointsTrajectory);
+                        // getTrajectoryWithVelocityProfile(jointsTrajectory, outJointsTrajectory);
                         // outJointsTrajectory = jointsTrajectory;
                         reply.addVocab32(VOCAB_OK);
                         Bottle bJointsTrajectory;
-                        for (int i = 0; i < outJointsTrajectory.size(); i++)
+                        for (int i = 0; i < jointsTrajectory.size(); i++)
                         {
                             Bottle bJointsPosition;
                             for (int j = 0; j < numJoints; j++)
                             {
-                                bJointsPosition.addFloat64(outJointsTrajectory[i][j]);
+                                bJointsPosition.addFloat64(jointsTrajectory[i][j]);
                             }
                             bJointsTrajectory.addList() = bJointsPosition;
                         }
@@ -1565,53 +1674,54 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
     return reply.write(*writer);
 }
 
-bool TrajectoryGeneration::getTrajectoryWithVelocityProfile(const std::vector<std::vector<double>> &jointsTrajectory, std::vector<std::vector<double>> &outJointsTrajectory){
+bool TrajectoryGeneration::getTrajectoryWithVelocityProfile(const std::vector<std::vector<double>> &jointsTrajectory, std::vector<std::vector<double>> &outJointsTrajectory)
+{
     outJointsTrajectory.clear();
-    for (unsigned int pnt=0; pnt<jointsTrajectory.size()-1; pnt++){
+    for (unsigned int pnt = 0; pnt < jointsTrajectory.size() - 1; pnt++)
+    {
         // generate initial profiles
         printf("generate initial profiles\n");
-        for (unsigned int i=0; i<generatorsVelProfile.size(); i++)
-            generatorsVelProfile[i]->SetProfile(jointsTrajectory[pnt][i], jointsTrajectory[pnt+1][i]);
-         // find profile that takes most time
+        for (unsigned int i = 0; i < generatorsVelProfile.size(); i++)
+            generatorsVelProfile[i]->SetProfile(jointsTrajectory[pnt][i], jointsTrajectory[pnt + 1][i]);
+        // find profile that takes most time
         printf("find profile that takes most time\n");
         double max_time = 0.04;
-        for (unsigned int i=0; i<generatorsVelProfile.size(); i++)
+        for (unsigned int i = 0; i < generatorsVelProfile.size(); i++)
             if (generatorsVelProfile[i]->Duration() > max_time)
                 max_time = generatorsVelProfile[i]->Duration();
-           // generate profiles with max time
+        // generate profiles with max time
         printf("generate profiles with max time\n");
-        for (unsigned int i=0; i<generatorsVelProfile.size(); i++)
-            generatorsVelProfile[i]->SetProfileDuration(jointsTrajectory[pnt][i], jointsTrajectory[pnt+1][i], max_time);
-        int steps = (int)(max_time/0.04);
+        for (unsigned int i = 0; i < generatorsVelProfile.size(); i++)
+            generatorsVelProfile[i]->SetProfileDuration(jointsTrajectory[pnt][i], jointsTrajectory[pnt + 1][i], max_time);
+        int steps = (int)(max_time / 0.04);
         double time = 0;
 
-        for (unsigned int s=0; s<=steps; s++){
-            std::vector<double>jointsPosition;
+        for (unsigned int s = 0; s <= steps; s++)
+        {
+            std::vector<double> jointsPosition;
             printf("jointsPosition: ");
-            for (unsigned int i=0; i<generatorsVelProfile.size(); i++){
+            for (unsigned int i = 0; i < generatorsVelProfile.size(); i++)
+            {
                 jointsPosition.push_back(generatorsVelProfile[i]->Pos(time));
                 printf("%f ", jointsPosition[i]);
             }
             printf("\n");
-            time += max_time/(double)steps;
+            time += max_time / (double)steps;
             outJointsTrajectory.push_back(jointsPosition);
         }
     }
     return true;
 }
 
-ob::OptimizationObjectivePtr TrajectoryGeneration::getPathObjective(const ob::SpaceInformationPtr& si)
+ob::OptimizationObjectivePtr TrajectoryGeneration::getPathObjective(const ob::SpaceInformationPtr &si)
 {
     return ob::OptimizationObjectivePtr(new MinimizeDistanceOptimizationObjective(si));
 }
-
-
 
 ob::Cost MinimizeDistanceOptimizationObjective::stateCost(const ob::State *s) const
 {
     return identityCost();
 }
-
 
 ob::Cost MinimizeDistanceOptimizationObjective::motionCost(const ob::State *s1, const ob::State *s2) const
 {
@@ -1622,35 +1732,35 @@ ob::Cost MinimizeDistanceOptimizationObjective::motionCost(const ob::State *s1, 
     KDL::JntArray jointpositions1 = KDL::JntArray(numJoints);
     KDL::JntArray jointpositions2 = KDL::JntArray(numJoints);
     double jointsCost = 0;
-    
+
     float w_joint = 1.0;
     for (unsigned int i = 0; i < jointpositions1.rows(); i++)
     {
         jointpositions1(i) = jointState1->values[i];
         jointpositions2(i) = jointState2->values[i];
-        if(i == 0){
+        if (i == 0)
+        {
             w_joint = 5.0;
         }
-        else{
+        else
+        {
             w_joint = 1.0;
         }
-        jointsCost+= w_joint*abs(jointpositions2(i)-jointpositions1(i))/((*distQLimits)(i));
-
+        jointsCost += w_joint * abs(jointpositions2(i) - jointpositions1(i)) / ((*distQLimits)(i));
     }
 
-    jointsCost = jointsCost/jointpositions1.rows();
-
-
+    jointsCost = jointsCost / jointpositions1.rows();
 
     // KDL::Frame pose1, pose2;
     // fksolver->JntToCart(jointpositions1, pose1);
     // fksolver->JntToCart(jointpositions2, pose2);
 
     // double positionCost = pow(pose1.p.x() - pose2.p.x(), 2) + pow(pose1.p.y() - pose2.p.y(), 2) + pow(pose1.p.z() - pose2.p.z(), 2);
-    
+
     return ob::Cost(jointsCost);
 }
 
-ob::Cost MinimizeDistanceOptimizationObjective::motionCostHeuristic(const ob::State *s1, const ob::State *s2) const{
-    return this->motionCost(s1,s2);
+ob::Cost MinimizeDistanceOptimizationObjective::motionCostHeuristic(const ob::State *s1, const ob::State *s2) const
+{
+    return this->motionCost(s1, s2);
 }

@@ -209,6 +209,7 @@ std::vector<double> m_qmax;
             void changeJointsLimitsFromConfigFile(KDL::JntArray & qlim, const yarp::os::Searchable& config, const std::string& mode);
             bool checkGoalPose(yarp::os::Bottle *, std::vector<double> & desireQb, std::string & errorMessage);
             bool checkGoalJoints(yarp::os::Bottle * bGoal, std::string & errorMessage);
+            bool checkGoalPose(yarp::os::Bottle *bGoal, const std::vector<double> &currentQ, std::vector<double> &desireQ, std::string &errorMessage);
 
 
             bool isValid(const ob::State *state);
