@@ -22,7 +22,7 @@ using namespace roboticslab::KdlVectorConverter;
 #define DEFAULT_KINEMATICS_CONFIG "teo-trunk-rightArm-fetch.ini"
 #define DEFAULT_RANGE_RRT 1.0
 #define DEFAULT_PRUNE_THRESHOLD 0.5
-#define DEFAULT_MAX_PLANNER_TIME 5.0
+#define DEFAULT_MAX_PLANNER_TIME 10.0
 
 KDL::ChainFkSolverPos_recursive *fksolver;
 int numJoints;
@@ -142,6 +142,35 @@ void TrajectoryGeneration::changeJointsLimitsFromConfigFile(KDL::JntArray &qlim,
     }
 }
 
+void TrajectoryGeneration::getSolverTolerances(KDL::JntArray &tolerances, const yarp::os::Searchable &config)
+{
+    solverTolerances.resize(6);
+    if (!config.check("solverTolerances"))
+    {
+        yInfo() << "solverTolerances NOT defined in config file. Continue with the default tolerances.";
+        for(int i=0; i<6; i++)
+        {
+          if (i<3){
+            tolerances(i) = DEFAULT_TRAC_IK_POSITION_TOLERANCE;
+          }
+          else{
+            tolerances(i) = DEFAULT_TRAC_IK_ORIENTATION_TOLERANCE;
+          }
+        }
+    }
+    else
+    {
+        yarp::os::Bottle *tolerancesConfig = config.find("solverTolerances").asList();
+        for (int i = 0; i < 6; i++)
+        {
+            if (!tolerancesConfig->get(i).isNull())
+            {
+              tolerances(i) = tolerancesConfig->get(i).asFloat64();
+            }
+        }
+    }
+}
+
 /************************************************************************/
 
 bool TrajectoryGeneration::open(yarp::os::Searchable &config)
@@ -157,6 +186,13 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     plannerRange = config.check("plannerRange", yarp::os::Value(DEFAULT_RANGE_RRT), "range the planner is supposed to use").asFloat64();
     pruneThreshold = config.check("pruneThreshold", yarp::os::Value(DEFAULT_PRUNE_THRESHOLD), "prune theshold used for RRTStar").asFloat64();
     maxPlannerTime = config.check("maxPlannerTime", yarp::os::Value(DEFAULT_MAX_PLANNER_TIME), "seconds the algorithm is allowed to spend planning").asFloat64();
+    solver = config.check("solver", yarp::os::Value(DEFAULT_SOLVER), "solver type").asString();
+
+    if (solver=="trac-ik"){
+        solverType = config.check("solverType", yarp::os::Value(DEFAULT_SOLVER_TYPE), "solver type").asString();
+        getSolverTolerances(solverTolerances, config);
+    }
+
     prefix = "/trajectoryGeneration/" + deviceName;
     printf("TrajectoryGeneration using robot: %s\n", robot.c_str());
     printf("TrajectoryGeneration using planningSpace: %s\n", planningSpace.c_str());
@@ -165,6 +201,11 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     printf("TrajectoryGeneration using plannerType: %s\n", plannerType.c_str());
     printf("TrajectoryGeneration using plannerRange: %f\n", plannerRange);
     printf("TrajectoryGeneration using pruneThreshold: %f\n", pruneThreshold);
+    printf("TrajectoryGeneration solver: %s\n", solver.c_str());
+    if(solver=="trac-ik"){
+      printf("TrajectoryGeneration using solverType: %s\n", solverType.c_str());
+      printf("TrajectoryGeneration using solverTolerances: [%f, %f, %f, %f, %f, %f]\n", solverTolerances(0), solverTolerances(1), solverTolerances(2), solverTolerances(3), solverTolerances(4), solverTolerances(5));
+    }
 
     printf("--------------------------------------------------------------\n");
     if (config.check("help"))
@@ -319,13 +360,13 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
 
     nlopt_opt opt_obo;
     opt_obo = nlopt_create(NLOPT_LN_BOBYQA, numJoints);
-    iksolver = new TRAC_IK::TRAC_IK(chain, qminRad, qmaxRad, timeout_in_secs, 0.0005, TRAC_IK::Speed);
-    boundsSolver.vel.x(0.0005);
-    boundsSolver.vel.y(0.0005);
-    boundsSolver.vel.z(0.0005);
-    boundsSolver.rot.x(0.05);
-    boundsSolver.rot.y(0.05);
-    boundsSolver.rot.z(0.05);
+    iksolver = new TRAC_IK::TRAC_IK(chain, qminRad, qmaxRad, timeout_in_secs, 0.002, TRAC_IK::Speed);
+    boundsSolver.vel.x(solverTolerances(0));
+    boundsSolver.vel.y(solverTolerances(1));
+    boundsSolver.vel.z(solverTolerances(2));
+    boundsSolver.rot.x(solverTolerances(3));
+    boundsSolver.rot.y(solverTolerances(4));
+    boundsSolver.rot.z(solverTolerances(5));
 
     fksolver = new KDL::ChainFkSolverPos_recursive(chain);
 
@@ -567,7 +608,8 @@ bool TrajectoryGeneration::isValid(const ob::State *state)
             KDL::JntArray jointpositions = KDL::JntArray(numJoints);
 
             int foundik = (*iksolver).CartToJnt(qInitRad, frame, jointpositionsRad, boundsSolver);
-            if (foundik != 1)
+            yInfo() << "foundik 570: " << foundik;
+            if (foundik < 0)
             {
                 yError() << "invKin() failed";
                 return false;
@@ -796,7 +838,8 @@ bool TrajectoryGeneration::computeDiscretePath(ob::ScopedState<ob::SE3StateSpace
             }
 
             int foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);
-            if (foundik != 1)
+            yInfo()<<"foundik 799: "<<foundik;
+            if (foundik < 1)
             {
                 yError() << "invKin() failed";
                 return false;
@@ -982,8 +1025,17 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, const std::vec
     KDL::JntArray goaljointpositions = KDL::JntArray(numJoints);
     KDL::Frame frame = vectorToFrame(xGoal);
 
-    int foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);
-    if (foundik != 1)
+    int foundik = -1;
+    unsigned int nPruebas = 1;
+    for (unsigned int n = 0; n < nPruebas; n++)
+    {
+        yInfo()<<"Prueba: "<<n;
+        foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);  
+        if (foundik >= 0)
+            break;
+    }
+    yInfo()<<"foundik 994: "<<foundik;
+    if (foundik < 0)
     {
         yError() << "invKin() failed";
         return false;
@@ -1004,7 +1056,7 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, const std::vec
 
             desireQ[j] = goaljointpositions(j);
         }
-        yInfo() << desireQ;
+        yInfo() <<"desireQ: "<< desireQ;
 
         ob::ScopedState<ob::RealVectorStateSpace> goal(space);
         for (unsigned int j = 0; j < numJoints; j++)
@@ -1022,10 +1074,13 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, const std::vec
         }
         else
         {
-            if (si->satisfiesBounds(goalState))
+            if (si->satisfiesBounds(goalState)){
+                yInfo() << "Goal state collides";
                 errorMessage = errorsTrajectoryGeneration::goal_collision;
+            }
             else
             {
+                yInfo() << "Goal state outside bounds";
                 errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
             }
             return false;
@@ -1113,8 +1168,24 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<do
         //     errorMessage = errorsTrajectoryGeneration::goal_not_inv_kin;
         //     return false;
         // }
-        int foundik = (*iksolver).CartToJnt(qInitRad, frame, goaljointpositionsRad, boundsSolver);
-        if (foundik != 1)
+
+        int foundik = -1;
+        unsigned int nPruebas = 1;
+        for (unsigned int n=0; n<nPruebas; n++)
+        {
+            KDL::JntArray qAuxRad = KDL::JntArray(numJoints);
+            for(unsigned int i=0; i<qAuxRad.rows(); i++)
+            {
+                qAuxRad(i) = qInitRad(i) + (rand() % 100 - 50) * 0.005;
+            }
+            yInfo()<<"qAuxRad: "<<qAuxRad(0)<<" "<<qAuxRad(1)<<" "<<qAuxRad(2)<<" "<<qAuxRad(3)<<" "<<qAuxRad(4)<<" "<<qAuxRad(5)<<" "<<qAuxRad(6)<<" "<<qAuxRad(7);
+            foundik = (*iksolver).CartToJnt(qAuxRad, frame, goaljointpositionsRad, boundsSolver);
+            yInfo()<<"foundik 1131: "<<foundik; 
+            if (foundik >= 0)
+                break;
+        }
+        yInfo()<<"foundik 1131: "<<foundik;
+        if (foundik < 0)
         {
             yError() << "invKin() failed";
             return false;
@@ -1135,7 +1206,7 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<do
 
                 desireQ[j] = goaljointpositions(j);
             }
-            yInfo() << desireQ;
+            yInfo() <<"desireQ: "<< desireQ;
 
             ob::ScopedState<ob::RealVectorStateSpace> goal(space);
             for (unsigned int j = 0; j < numJoints; j++)
@@ -1153,10 +1224,12 @@ bool TrajectoryGeneration::checkGoalPose(yarp::os::Bottle *bGoal, std::vector<do
             }
             else
             {
-                if (si->satisfiesBounds(goalState))
+                if (si->satisfiesBounds(goalState)){
+                    yInfo() << "Goal state collides";
                     errorMessage = errorsTrajectoryGeneration::goal_collision;
+                }
                 else
-                {
+                {   yInfo() << "Goal state outside bounds";
                     errorMessage = errorsTrajectoryGeneration::joints_outside_bounds;
                 }
                 return false;
@@ -1186,7 +1259,7 @@ bool TrajectoryGeneration::checkGoalJoints(yarp::os::Bottle *bGoal, std::string 
             yError() << "fwdKin failed";
             return false;
         }
-        yInfo() << "Goal: " << xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
+        yInfo() << "Goal joints: " << xGoal[0] << " " << xGoal[1] << " " << xGoal[2] << " " << xGoal[3] << " " << xGoal[4] << " " << xGoal[5];
 
         ob::ScopedState<ob::RealVectorStateSpace> goal(space);
         for (unsigned int j = 0; j < numJoints; j++)

@@ -46,6 +46,12 @@
 #define FRONTAL_WRIST_LINK_RADIUS 0.2
 #define MARGIN_BOUNDS 0.0
 
+#define DEFAULT_SOLVER "trac-ik"
+#define DEFAULT_SOLVER_TYPE "Speed"
+#define DEFAULT_TRAC_IK_POSITION_TOLERANCE 1e-5
+#define DEFAULT_TRAC_IK_ORIENTATION_TOLERANCE 1e-4
+
+
 
 
 using namespace yarp::os;
@@ -118,10 +124,15 @@ public:
             /** kinematics config file **/
             std::string kinematicsConfig;
 
+            /** kinematics solver **/
+            std::string solver;
+            std::string solverType;
+            KDL::JntArray solverTolerances;
+
             KDL::JntArray qmin;
             KDL::JntArray qmax;
-std::vector<double> m_qmin;
-std::vector<double> m_qmax;
+            std::vector<double> m_qmin;
+            std::vector<double> m_qmax;
 
             std::vector<std::array<float,3>>m_boxShapes;
             std::vector<std::array<float,3>>m_boxShapesFixedObjects;
@@ -187,7 +198,7 @@ std::vector<double> m_qmax;
 
             yarp::os::RpcServer rpcServer;
             
-            double timeout_in_secs =0.2; // TODO PASS TO THE CONSTRUCTOR
+            double timeout_in_secs =1.0; // TODO PASS TO THE CONSTRUCTOR
 
             TRAC_IK::TRAC_IK * iksolver;
             KDL::Twist boundsSolver = KDL::Twist::Zero();
@@ -220,6 +231,7 @@ std::vector<double> m_qmax;
             bool computeDiscretePath(ob::ScopedState<ob::RealVectorStateSpace> start, ob::ScopedState<ob::RealVectorStateSpace> goal, std::vector<std::vector<double>> &jointsTrajectory, std::string & errorMessage);
             
             bool getTrajectoryWithVelocityProfile(const std::vector<std::vector<double>> &jointsTrajectory, std::vector<std::vector<double>> &outJointsTrajectory);
+            void getSolverTolerances(KDL::JntArray &tolerances, const yarp::os::Searchable &config);
 
             ob::OptimizationObjectivePtr getPathObjective(const ob::SpaceInformationPtr& si);
 
