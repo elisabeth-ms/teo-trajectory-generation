@@ -296,7 +296,7 @@ bool TrajectoryGeneration::open(yarp::os::Searchable &config)
     }
 
     m_clientGetGraspingPoses.open(prefix + "/getGraspingPoses/rpc:c");
-    yarp::os::Network::connect(robot + prefix + "/getGraspingPoses/rpc:c", "/getGraspingPoses/rpc:s");
+    yarp::os::Network::connect(prefix + "/getGraspingPoses/rpc:c", "/getGraspingPoses/rpc:s");
     // Init collisions objects
     if (deviceName == "trunkAndRightArm")
         chain = makeTeoTrunkAndRightArmKinematicsFromDH();
@@ -1540,6 +1540,7 @@ bool TrajectoryGeneration::read(yarp::os::ConnectionReader &connection)
         break;
         case VOCAB_CMD_SET_SUPERQUADRICS:
         {
+            yInfo() << "Set superquadrics for collision checking";
             std::vector<int> label_idx;
             std::vector<std::array<float, 11>> params;
             getSuperquadrics(label_idx, params);
